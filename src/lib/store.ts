@@ -236,16 +236,21 @@ export const actions = {
   },
 };
 
+const selectConversations = (s: LyricState) => s.conversations;
+const selectMessages = (s: LyricState) => s.messages;
+
 export function useConversations() {
-  return useLyricStore((s) =>
-    [...s.conversations].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
+  const conversations = useLyricStore(selectConversations);
+  return useMemo(
+    () => [...conversations].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
+    [conversations],
   );
 }
 
 export function useMessages(conversationId: string | null) {
-  const selector = useCallback(
-    (s: LyricState) => (conversationId ? s.messages.filter((m) => m.conversationId === conversationId) : []),
-    [conversationId],
+  const messages = useLyricStore(selectMessages);
+  return useMemo(
+    () => (conversationId ? messages.filter((m) => m.conversationId === conversationId) : []),
+    [messages, conversationId],
   );
-  return useLyricStore(selector);
 }
