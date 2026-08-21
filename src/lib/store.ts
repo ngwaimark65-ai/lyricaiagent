@@ -1,4 +1,4 @@
-import { useCallback, useSyncExternalStore } from "react";
+import { useMemo, useSyncExternalStore } from "react";
 import type {
   Attachment,
   Conversation,
