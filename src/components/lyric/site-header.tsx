@@ -8,7 +8,6 @@ export function SiteHeader() {
       <div className="flex items-center gap-4">
         <Link
           to="/auth"
-          search={{ mode: "login" }}
           className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
         >
           Login
