@@ -202,7 +202,7 @@ function ChatPage() {
           </div>
         </div>
 
-        <Composer onSend={send} />
+        <Composer onSend={send} busy={messages.some((m) => m.streaming)} />
       </div>
     </div>
   );
