@@ -202,7 +202,7 @@ function ChatPage() {
           </div>
         </div>
 
-        <Composer onSend={send} />
+        <Composer onSend={send} busy={messages.some((m) => m.streaming)} />
       </div>
     </div>
   );
@@ -274,13 +274,13 @@ function MessageThread({
             <LyricMark className="mt-0.5 shrink-0" />
             <div
               className={cn(
-                "max-w-[90%] text-sm leading-relaxed",
-                m.pending
+                "max-w-[90%] whitespace-pre-wrap text-sm leading-relaxed",
+                m.pending || m.errored
                   ? "rounded-2xl border border-dashed border-hairline bg-surface px-4 py-3 text-muted-foreground"
                   : "text-foreground/90",
               )}
             >
-              {m.content}
+              {m.streaming && !m.content ? <TypingDots /> : m.content}
             </div>
           </div>
         ),
@@ -289,6 +289,20 @@ function MessageThread({
       {showQuizOffer && <QuizOffer conversationId={conversationId} />}
       <div ref={endRef} />
     </div>
+  );
+}
+
+function TypingDots() {
+  return (
+    <span className="flex items-center gap-1" aria-label="Lyric is typing">
+      {[0, 1, 2].map((i) => (
+        <span
+          key={i}
+          className="size-1.5 animate-pulse rounded-full bg-muted-foreground"
+          style={{ animationDelay: `${i * 150}ms` }}
+        />
+      ))}
+    </span>
   );
 }
 
@@ -345,13 +359,20 @@ function QuizOffer({ conversationId }: { conversationId: string }) {
   );
 }
 
-function Composer({ onSend }: { onSend: (text: string, attachments: Attachment[]) => void }) {
+function Composer({
+  onSend,
+  busy,
+}: {
+  onSend: (text: string, attachments: Attachment[]) => void;
+  busy: boolean;
+}) {
   const [value, setValue] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
   const imageRef = useRef<HTMLInputElement>(null);
 
   const submit = () => {
+    if (busy) return;
     if (!value.trim() && attachments.length === 0) return;
     onSend(value.trim() || "Please look at this.", attachments);
     setValue("");
@@ -430,14 +451,14 @@ function Composer({ onSend }: { onSend: (text: string, attachments: Attachment[]
             onClick={submit}
             aria-label="Send message"
             className="grid size-9 shrink-0 place-items-center rounded-xl bg-brand text-brand-foreground disabled:opacity-40"
-            disabled={!value.trim() && attachments.length === 0}
+            disabled={busy || (!value.trim() && attachments.length === 0)}
           >
             <ArrowUp className="size-4" />
           </button>
         </div>
 
         <p className="mt-2 text-center text-[11px] text-muted-foreground/60">
-          Lyric can make mistakes. Model responses are not connected yet.
+          Lyric can make mistakes. Check important information.
         </p>
 
         <input

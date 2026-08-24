@@ -145,11 +145,11 @@ export const actions = {
   },
 
   /**
-   * Appends the user's turn and a transparent placeholder for the model
-   * reply. No response is invented: the assistant slot is explicitly marked
-   * as awaiting a connected model.
+   * Appends the user's turn, then streams a real reply from the Lyric AI
+   * endpoint into an assistant message. Nothing is ever invented locally:
+   * failures surface as an explicit error message.
    */
-  sendMessage(conversationId: string, content: string, attachments: Attachment[] = []) {
+  async sendMessage(conversationId: string, content: string, attachments: Attachment[] = []) {
     const now = new Date().toISOString();
     const conversation = state.conversations.find((c) => c.id === conversationId);
     if (!conversation) return;
@@ -157,6 +157,7 @@ export const actions = {
     const subject = detectSubject(content) ?? conversation.subject;
     const educational = conversation.educational || isEducational(content);
     const isFirst = !state.messages.some((m) => m.conversationId === conversationId);
+    const hasImage = attachments.some((a) => a.kind === "image");
 
     const userMessage: Message = {
       id: uid(),
@@ -167,19 +168,22 @@ export const actions = {
       createdAt: now,
     };
 
-    const placeholder: Message = {
-      id: uid(),
+    const replyId = uid();
+    const reply: Message = {
+      id: replyId,
       conversationId,
       role: "assistant",
-      content: attachments.some((a) => a.kind === "image")
-        ? "Image received. Lyric's vision model isn't connected yet, so this attachment hasn't been analysed."
-        : "Lyric isn't connected to an AI model yet, so there's no reply to show. Your message is saved and will be sent once the model is wired up.",
+      content: "",
       createdAt: now,
-      pending: attachments.some((a) => a.kind === "image") ? "vision" : "model",
+      streaming: true,
     };
 
+    const history = state.messages
+      .filter((m) => m.conversationId === conversationId && !m.errored && m.content)
+      .map((m) => ({ role: m.role, content: m.content }));
+
     set({
-      messages: [...state.messages, userMessage, placeholder],
+      messages: [...state.messages, userMessage, reply],
       conversations: state.conversations.map((c) =>
         c.id === conversationId
           ? {
@@ -193,7 +197,62 @@ export const actions = {
       ),
     });
 
-    actions.consumeUsage(attachments.some((a) => a.kind === "image") ? "vision.solve" : "chat.message");
+    actions.consumeUsage(hasImage ? "vision.solve" : "chat.message");
+
+    const patchReply = (patch: Partial<Message>) => {
+      set({
+        messages: state.messages.map((m) => (m.id === replyId ? { ...m, ...patch } : m)),
+      });
+    };
+
+    try {
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: [
+            ...history,
+            {
+              role: "user",
+              content: hasImage
+                ? `${content}\n\n(The user attached an image. Image understanding isn't connected yet — ask them to describe or type out what it shows.)`
+                : content,
+            },
+          ],
+          preferences: state.profile.preferences,
+        }),
+      });
+
+      if (!response.ok || !response.body) {
+        const detail = await response.text().catch(() => "");
+        patchReply({
+          streaming: false,
+          errored: true,
+          content: detail || "Lyric couldn't reach the AI model. Please try again.",
+        });
+        return;
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let text = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        text += decoder.decode(value, { stream: true });
+        patchReply({ content: text });
+      }
+      patchReply({
+        content: text.trim() || "The model returned an empty response. Please try again.",
+        streaming: false,
+      });
+    } catch {
+      patchReply({
+        streaming: false,
+        errored: true,
+        content: "Network error while contacting Lyric's AI. Please check your connection and try again.",
+      });
+    }
   },
 
   markQuizOffered(conversationId: string) {

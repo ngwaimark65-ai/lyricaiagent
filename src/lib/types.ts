@@ -43,6 +43,10 @@ export interface Message {
   createdAt: string;
   /** Set when the message is a placeholder for an unconnected capability. */
   pending?: "model" | "vision" | "voice";
+  /** True while the model reply is still streaming in. */
+  streaming?: boolean;
+  /** Set when the model call failed; content holds the error message. */
+  errored?: boolean;
 }
 
 export interface Conversation {
