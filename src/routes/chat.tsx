@@ -359,7 +359,13 @@ function QuizOffer({ conversationId }: { conversationId: string }) {
   );
 }
 
-function Composer({ onSend }: { onSend: (text: string, attachments: Attachment[]) => void }) {
+function Composer({
+  onSend,
+  busy,
+}: {
+  onSend: (text: string, attachments: Attachment[]) => void;
+  busy: boolean;
+}) {
   const [value, setValue] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
