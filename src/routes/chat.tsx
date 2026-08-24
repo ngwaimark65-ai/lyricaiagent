@@ -372,6 +372,7 @@ function Composer({
   const imageRef = useRef<HTMLInputElement>(null);
 
   const submit = () => {
+    if (busy) return;
     if (!value.trim() && attachments.length === 0) return;
     onSend(value.trim() || "Please look at this.", attachments);
     setValue("");
@@ -450,14 +451,14 @@ function Composer({
             onClick={submit}
             aria-label="Send message"
             className="grid size-9 shrink-0 place-items-center rounded-xl bg-brand text-brand-foreground disabled:opacity-40"
-            disabled={!value.trim() && attachments.length === 0}
+            disabled={busy || (!value.trim() && attachments.length === 0)}
           >
             <ArrowUp className="size-4" />
           </button>
         </div>
 
         <p className="mt-2 text-center text-[11px] text-muted-foreground/60">
-          Lyric can make mistakes. Model responses are not connected yet.
+          Lyric can make mistakes. Check important information.
         </p>
 
         <input
