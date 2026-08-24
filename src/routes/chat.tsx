@@ -292,6 +292,20 @@ function MessageThread({
   );
 }
 
+function TypingDots() {
+  return (
+    <span className="flex items-center gap-1" aria-label="Lyric is typing">
+      {[0, 1, 2].map((i) => (
+        <span
+          key={i}
+          className="size-1.5 animate-pulse rounded-full bg-muted-foreground"
+          style={{ animationDelay: `${i * 150}ms` }}
+        />
+      ))}
+    </span>
+  );
+}
+
 function QuizOffer({ conversationId }: { conversationId: string }) {
   const [started, setStarted] = useState(false);
 
