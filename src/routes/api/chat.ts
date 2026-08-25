@@ -1,5 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 
+import { formatSearchResultsForModel, searchTavily } from "@/lib/search.server";
+
 type ChatMessage = { role: "user" | "assistant" | "system"; content: string };
 
 type Body = {
@@ -10,11 +12,12 @@ type Body = {
     explanationStyle?: string;
     language?: string;
   };
+  useSearch?: boolean;
 };
 
-function systemPrompt(prefs: Body["preferences"]) {
+function systemPrompt(prefs: Body["preferences"], searchContext?: string) {
   const lines = [
-    "You are Lyric, a general-purpose AI assistant. Your tagline is \"One AI. Everything you need.\"",
+    'You are Lyric, a general-purpose AI assistant. Your tagline is "One AI. Everything you need."',
     "You are conversational, intelligent, helpful and friendly.",
     "You answer everyday, professional and educational questions equally well.",
     "Explain concepts clearly, using structure and short examples where useful.",
@@ -27,6 +30,16 @@ function systemPrompt(prefs: Body["preferences"]) {
   if (prefs?.explanationStyle)
     lines.push(`Preferred explanation style: ${prefs.explanationStyle}.`);
   if (prefs?.language) lines.push(`Reply in ${prefs.language}.`);
+
+  if (searchContext) {
+    lines.push(
+      "",
+      "The user's question may require current information. Use the following recent web search results to help answer. Cite sources by number [1], [2], etc. when you use them. If the results do not answer the question, rely on your own knowledge and say so.",
+      "",
+      searchContext,
+    );
+  }
+
   return lines.join("\n");
 }
 
@@ -45,6 +58,24 @@ export const Route = createFileRoute("/api/chat")({
           return new Response("AI is not configured.", { status: 500 });
         }
 
+        let searchContext: string | undefined;
+        if (body.useSearch) {
+          const lastUser = [...messages].reverse().find((m) => m.role === "user");
+          if (lastUser?.content) {
+            try {
+              const search = await searchTavily({
+                query: lastUser.content,
+                maxResults: 5,
+                searchDepth: "basic",
+              });
+              searchContext = formatSearchResultsForModel(search.results);
+            } catch (error) {
+              console.error("Web search failed:", error);
+              // Continue without search context rather than failing the whole chat.
+            }
+          }
+        }
+
         const upstream = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
           method: "POST",
           headers: {
@@ -56,7 +87,7 @@ export const Route = createFileRoute("/api/chat")({
             model: "google/gemini-3.7-flash",
             stream: true,
             messages: [
-              { role: "system", content: systemPrompt(body.preferences) },
+              { role: "system", content: systemPrompt(body.preferences, searchContext) },
               ...messages.slice(-20),
             ],
           }),
