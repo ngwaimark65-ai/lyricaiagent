@@ -9,6 +9,7 @@ import type {
 } from "./types";
 import { USAGE_COST } from "./types";
 import { detectSubject, isEducational } from "./education";
+import { shouldSearchWeb } from "./search-trigger";
 
 /**
  * Client-side store standing in for the Supabase data layer.
@@ -158,6 +159,7 @@ export const actions = {
     const educational = conversation.educational || isEducational(content);
     const isFirst = !state.messages.some((m) => m.conversationId === conversationId);
     const hasImage = attachments.some((a) => a.kind === "image");
+    const useSearch = shouldSearchWeb(content);
 
     const userMessage: Message = {
       id: uid(),
@@ -218,9 +220,10 @@ export const actions = {
                 ? `${content}\n\n(The user attached an image. Image understanding isn't connected yet — ask them to describe or type out what it shows.)`
                 : content,
             },
-          ],
-          preferences: state.profile.preferences,
-        }),
+            ],
+            preferences: state.profile.preferences,
+            useSearch,
+          }),
       });
 
       if (!response.ok || !response.body) {
