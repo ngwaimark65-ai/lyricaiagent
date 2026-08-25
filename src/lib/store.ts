@@ -9,6 +9,7 @@ import type {
 } from "./types";
 import { USAGE_COST } from "./types";
 import { detectSubject, isEducational } from "./education";
+import { shouldSearchWeb } from "./search-trigger";
 
 /**
  * Client-side store standing in for the Supabase data layer.
