@@ -59,19 +59,29 @@ export const Route = createFileRoute("/api/chat")({
         }
 
         let searchContext: string | undefined;
+        let searchError: string | undefined;
         if (body.useSearch) {
           const lastUser = [...messages].reverse().find((m) => m.role === "user");
           if (lastUser?.content) {
+            const startedAt = Date.now();
             try {
               const search = await searchTavily({
                 query: lastUser.content,
                 maxResults: 5,
                 searchDepth: "basic",
+                timeoutMs: 12_000,
               });
               searchContext = formatSearchResultsForModel(search.results);
+              console.log(
+                `[chat] tavily ok: ${search.results?.length ?? 0} results in ${Date.now() - startedAt}ms`,
+              );
             } catch (error) {
-              console.error("Web search failed:", error);
-              // Continue without search context rather than failing the whole chat.
+              // Never log the key — searchTavily only ever surfaces status + body text.
+              searchError =
+                error instanceof Error ? error.message : "Unknown web search failure";
+              console.error(
+                `[chat] tavily failed after ${Date.now() - startedAt}ms: ${searchError}`,
+              );
             }
           }
         }
@@ -87,7 +97,10 @@ export const Route = createFileRoute("/api/chat")({
             model: "google/gemini-3.7-flash",
             stream: true,
             messages: [
-              { role: "system", content: systemPrompt(body.preferences, searchContext) },
+              {
+                role: "system",
+                content: systemPrompt(body.preferences, searchContext, searchError),
+              },
               ...messages.slice(-20),
             ],
           }),
@@ -95,6 +108,7 @@ export const Route = createFileRoute("/api/chat")({
 
         if (!upstream.ok || !upstream.body) {
           const detail = await upstream.text().catch(() => "");
+          console.error(`[chat] gateway error ${upstream.status}: ${detail.slice(0, 300)}`);
           const message =
             upstream.status === 429
               ? "Lyric is receiving too many requests right now. Please try again in a moment."
@@ -107,32 +121,49 @@ export const Route = createFileRoute("/api/chat")({
         const decoder = new TextDecoder();
         const encoder = new TextEncoder();
         const reader = upstream.body.getReader();
-        let buffer = "";
 
+        // A pump loop in start() (instead of pull()) guarantees we keep draining the
+        // upstream SSE body and always close the stream — the previous pull-based
+        // version could leave the response open after the model finished.
         const stream = new ReadableStream<Uint8Array>({
-          async pull(controller) {
-            const { done, value } = await reader.read();
-            if (done) {
-              controller.close();
-              return;
-            }
-            buffer += decoder.decode(value, { stream: true });
-            const parts = buffer.split("\n");
-            buffer = parts.pop() ?? "";
-            for (const line of parts) {
-              const trimmed = line.trim();
-              if (!trimmed.startsWith("data:")) continue;
-              const data = trimmed.slice(5).trim();
-              if (!data || data === "[DONE]") continue;
-              try {
-                const json = JSON.parse(data) as {
-                  choices?: Array<{ delta?: { content?: string } }>;
-                };
-                const text = json.choices?.[0]?.delta?.content;
-                if (text) controller.enqueue(encoder.encode(text));
-              } catch {
-                /* ignore partial frames */
+          async start(controller) {
+            let buffer = "";
+            const flush = (chunk: string) => {
+              buffer += chunk;
+              const parts = buffer.split("\n");
+              buffer = parts.pop() ?? "";
+              for (const line of parts) {
+                const trimmed = line.trim();
+                if (!trimmed.startsWith("data:")) continue;
+                const data = trimmed.slice(5).trim();
+                if (!data) continue;
+                if (data === "[DONE]") return true;
+                try {
+                  const json = JSON.parse(data) as {
+                    choices?: Array<{ delta?: { content?: string } }>;
+                  };
+                  const text = json.choices?.[0]?.delta?.content;
+                  if (text) controller.enqueue(encoder.encode(text));
+                } catch {
+                  /* ignore partial frames */
+                }
               }
+              return false;
+            };
+
+            try {
+              while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                if (flush(decoder.decode(value, { stream: true }))) break;
+              }
+            } catch (error) {
+              console.error(
+                `[chat] stream error: ${error instanceof Error ? error.message : String(error)}`,
+              );
+            } finally {
+              await reader.cancel().catch(() => {});
+              controller.close();
             }
           },
           cancel(reason) {
@@ -146,6 +177,7 @@ export const Route = createFileRoute("/api/chat")({
             "Cache-Control": "no-cache",
           },
         });
+
       },
     },
   },
