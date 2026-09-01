@@ -15,7 +15,7 @@ type Body = {
   useSearch?: boolean;
 };
 
-function systemPrompt(prefs: Body["preferences"], searchContext?: string) {
+function systemPrompt(prefs: Body["preferences"], searchContext?: string, searchError?: string) {
   const lines = [
     'You are Lyric, a general-purpose AI assistant. Your tagline is "One AI. Everything you need."',
     "You are conversational, intelligent, helpful and friendly.",
