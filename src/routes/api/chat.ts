@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 
 import { formatSearchResultsForModel, searchTavily } from "@/lib/search.server";
+import { shouldSearchWeb } from "@/lib/search-trigger";
 
 type ChatMessage = { role: "user" | "assistant" | "system"; content: string };
 
@@ -15,6 +16,16 @@ type Body = {
   useSearch?: boolean;
 };
 
+function todayLabel() {
+  return new Date().toLocaleDateString("en-US", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    timeZone: "UTC",
+  });
+}
+
 function systemPrompt(prefs: Body["preferences"], searchContext?: string, searchError?: string) {
   const lines = [
     'You are Lyric, a general-purpose AI assistant. Your tagline is "One AI. Everything you need."',
@@ -22,8 +33,10 @@ function systemPrompt(prefs: Body["preferences"], searchContext?: string, search
     "You answer everyday, professional and educational questions equally well.",
     "Explain concepts clearly, using structure and short examples where useful.",
     "When a question is vague or a user is learning, ask one useful follow-up question.",
-    "Be concise by default; expand when the topic needs it. Use markdown-free plain prose unless lists genuinely help.",
+    "Be concise by default; expand when the topic needs it.",
     "Never invent facts. If unsure, say so.",
+    "",
+    `TODAY'S DATE: ${todayLabel()} (UTC). Treat any question about rankings, prices, office holders, news, sports or company facts as a question about TODAY unless the user names a past date. Your pretrained knowledge is out of date and must never be used for such questions.`,
   ];
   if (prefs?.gradeYear) lines.push(`The user's grade/year level: ${prefs.gradeYear}.`);
   if (prefs?.goals) lines.push(`The user's learning goals: ${prefs.goals}.`);
@@ -34,14 +47,23 @@ function systemPrompt(prefs: Body["preferences"], searchContext?: string, search
   if (searchContext) {
     lines.push(
       "",
-      "The user's question may require current information. Use the following recent web search results to help answer. Cite sources by number [1], [2], etc. when you use them. If the results do not answer the question, rely on your own knowledge and say so.",
+      "LIVE WEB SEARCH RESULTS ARE ATTACHED BELOW. Follow these rules exactly:",
+      "1. The search results are your PRIMARY factual source. Read them before writing anything.",
+      "2. Where the search results contradict what you remember, the search results win. Never output a remembered ranking, price, office holder or score that the results do not support.",
+      "3. Extract the specific facts (names, numbers, dates) from the results; do not fill gaps from memory. If a needed fact is missing from the results, say it is not available rather than guessing.",
+      "4. Prefer authoritative sources (marked Authoritative: yes — Forbes, Bloomberg, Reuters, AP, BBC, SEC filings, official sites, official league sources).",
+      "5. Cross-check important facts across at least two results when possible. If sources disagree, state the disagreement and which source is more recent or authoritative.",
+      "6. Note how current the data is when it matters (use the Published dates).",
+      "7. CITATIONS: never write bracketed numbers like [1] or [3]. Attribute inline by source name, e.g. \"according to Forbes\". End the answer with a 'Sources:' list containing only the sources you actually used, one per line, formatted exactly as: Forbes — https://example.com/page",
       "",
+      "===== SEARCH RESULTS =====",
       searchContext,
+      "===== END SEARCH RESULTS =====",
     );
   } else if (searchError) {
     lines.push(
       "",
-      "A live web search was attempted for this question but failed, so you have no current results. Answer from your own knowledge and clearly tell the user that live web search was unavailable right now.",
+      "A live web search was attempted for this question but failed, so you have no current results. Answer from your own knowledge and clearly tell the user that live web search was unavailable right now and that your information may be out of date.",
     );
   }
 
@@ -66,31 +88,41 @@ export const Route = createFileRoute("/api/chat")({
 
         let searchContext: string | undefined;
         let searchError: string | undefined;
-        if (body.useSearch) {
-          const lastUser = [...messages].reverse().find((m) => m.role === "user");
-          if (lastUser?.content) {
-            const startedAt = Date.now();
-            try {
-              const search = await searchTavily({
-                query: lastUser.content,
-                maxResults: 5,
-                searchDepth: "basic",
-                timeoutMs: 12_000,
-              });
-              searchContext = formatSearchResultsForModel(search.results);
-              console.log(
-                `[chat] tavily ok: ${search.results?.length ?? 0} results in ${Date.now() - startedAt}ms`,
-              );
-            } catch (error) {
-              // Never log the key — searchTavily only ever surfaces status + body text.
-              searchError =
-                error instanceof Error ? error.message : "Unknown web search failure";
-              console.error(
-                `[chat] tavily failed after ${Date.now() - startedAt}ms: ${searchError}`,
-              );
-            }
+        const lastUser = [...messages].reverse().find((m) => m.role === "user");
+        // The server re-evaluates the trigger so a stale or missing client flag
+        // can never cause a current-information answer from model memory.
+        const needsSearch = body.useSearch || shouldSearchWeb(lastUser?.content ?? "");
+        if (needsSearch && lastUser?.content) {
+          const startedAt = Date.now();
+          const now = new Date();
+          const monthYear = now.toLocaleDateString("en-US", {
+            month: "long",
+            year: "numeric",
+            timeZone: "UTC",
+          });
+          // Anchor the query to the present so the index returns fresh pages.
+          const query = `${lastUser.content} ${monthYear}`.slice(0, 380);
+          try {
+            const search = await searchTavily({
+              query,
+              maxResults: 8,
+              searchDepth: "advanced",
+              includeRawContent: true,
+              timeoutMs: 15_000,
+            });
+            searchContext = formatSearchResultsForModel(search.results);
+            console.log(
+              `[chat] tavily ok: ${search.results?.length ?? 0} results in ${Date.now() - startedAt}ms`,
+            );
+          } catch (error) {
+            // Never log the key — searchTavily only ever surfaces status + body text.
+            searchError = error instanceof Error ? error.message : "Unknown web search failure";
+            console.error(
+              `[chat] tavily failed after ${Date.now() - startedAt}ms: ${searchError}`,
+            );
           }
         }
+
 
         const upstream = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
           method: "POST",
