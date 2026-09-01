@@ -38,7 +38,13 @@ function systemPrompt(prefs: Body["preferences"], searchContext?: string, search
       "",
       searchContext,
     );
+  } else if (searchError) {
+    lines.push(
+      "",
+      "A live web search was attempted for this question but failed, so you have no current results. Answer from your own knowledge and clearly tell the user that live web search was unavailable right now.",
+    );
   }
+
 
   return lines.join("\n");
 }
