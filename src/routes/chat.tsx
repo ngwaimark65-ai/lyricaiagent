@@ -274,14 +274,15 @@ function MessageThread({
             <LyricMark className="mt-0.5 shrink-0" />
             <div
               className={cn(
-                "max-w-[90%] whitespace-pre-wrap text-sm leading-relaxed",
+                "max-w-[90%] text-sm leading-relaxed",
                 m.pending || m.errored
                   ? "rounded-2xl border border-dashed border-hairline bg-surface px-4 py-3 text-muted-foreground"
                   : "text-foreground/90",
               )}
             >
-              {m.streaming && !m.content ? <TypingDots /> : <LinkedText text={m.content} />}
+              {m.streaming && !m.content ? <TypingDots /> : <Markdown text={m.content} />}
             </div>
+
           </div>
         ),
       )}
