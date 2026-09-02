@@ -13,6 +13,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { LyricLogo, LyricMark } from "@/components/lyric/logo";
+import { Markdown } from "@/components/lyric/markdown";
+
 import { UsageMeter } from "@/components/lyric/usage-meter";
 import { actions, useConversations, useLyricStore, useMessages } from "@/lib/store";
 import { SUBJECT_LABEL } from "@/lib/education";
