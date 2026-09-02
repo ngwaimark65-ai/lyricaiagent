@@ -280,7 +280,7 @@ function MessageThread({
                   : "text-foreground/90",
               )}
             >
-              {m.streaming && !m.content ? <TypingDots /> : m.content}
+              {m.streaming && !m.content ? <TypingDots /> : <LinkedText text={m.content} />}
             </div>
           </div>
         ),
