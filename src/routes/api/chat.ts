@@ -88,6 +88,7 @@ export const Route = createFileRoute("/api/chat")({
 
         let searchContext: string | undefined;
         let searchError: string | undefined;
+        let failedParts: string[] = [];
         const lastUser = [...messages].reverse().find((m) => m.role === "user");
         // The server re-evaluates the trigger so a stale or missing client flag
         // can never cause a current-information answer from model memory.
@@ -100,28 +101,64 @@ export const Route = createFileRoute("/api/chat")({
             year: "numeric",
             timeZone: "UTC",
           });
-          // Anchor the query to the present so the index returns fresh pages.
-          const query = `${lastUser.content} ${monthYear}`.slice(0, 380);
-          try {
-            const search = await searchTavily({
+
+          // Multi-part questions get one search per distinct factual request so a
+          // single blended query can never leave one entity ungrounded.
+          const subQueries = await decomposeQuery(lastUser.content, apiKey).catch(() => []);
+          const tasks = subQueries.length >= 2 ? subQueries : [lastUser.content];
+          console.log(`[chat] search tasks (${tasks.length}): ${tasks.join(" | ")}`);
+
+          const runSearch = async (task: string) => {
+            // Anchor the query to the present so the index returns fresh pages.
+            const query = `${task} ${monthYear}`.slice(0, 380);
+            return searchTavily({
               query,
-              maxResults: 8,
+              maxResults: tasks.length > 1 ? 5 : 8,
               searchDepth: "advanced",
-              includeRawContent: true,
+              includeRawContent: tasks.length === 1,
               timeoutMs: 15_000,
             });
-            searchContext = formatSearchResultsForModel(search.results);
-            console.log(
-              `[chat] tavily ok: ${search.results?.length ?? 0} results in ${Date.now() - startedAt}ms`,
-            );
-          } catch (error) {
-            // Never log the key — searchTavily only ever surfaces status + body text.
-            searchError = error instanceof Error ? error.message : "Unknown web search failure";
-            console.error(
-              `[chat] tavily failed after ${Date.now() - startedAt}ms: ${searchError}`,
-            );
+          };
+
+          const settled = await Promise.all(
+            tasks.map(async (task) => {
+              try {
+                return { task, results: (await runSearch(task)).results ?? [] };
+              } catch {
+                // One retry per failing part before we admit it is unverified.
+                try {
+                  return { task, results: (await runSearch(task)).results ?? [] };
+                } catch (error) {
+                  const message =
+                    error instanceof Error ? error.message : "Unknown web search failure";
+                  console.error(`[chat] tavily failed for "${task}": ${message}`);
+                  return { task, results: [], error: message };
+                }
+              }
+            }),
+          );
+
+          const blocks: string[] = [];
+          for (const item of settled) {
+            if (item.results.length > 0) {
+              blocks.push(
+                `### SEARCH TASK: ${item.task}\n\n${formatSearchResultsForModel(item.results)}`,
+              );
+            } else {
+              failedParts.push(item.task);
+            }
           }
+
+          if (blocks.length > 0) {
+            searchContext = blocks.join("\n\n==========\n\n");
+          } else {
+            searchError = settled.find((s) => s.error)?.error ?? "No web search results";
+          }
+          console.log(
+            `[chat] search done in ${Date.now() - startedAt}ms — ok:${blocks.length} failed:${failedParts.length}`,
+          );
         }
+
 
 
         const upstream = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
