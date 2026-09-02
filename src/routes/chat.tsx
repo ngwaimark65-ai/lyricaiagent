@@ -13,6 +13,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { LyricLogo, LyricMark } from "@/components/lyric/logo";
+import { Markdown } from "@/components/lyric/markdown";
+
 import { UsageMeter } from "@/components/lyric/usage-meter";
 import { actions, useConversations, useLyricStore, useMessages } from "@/lib/store";
 import { SUBJECT_LABEL } from "@/lib/education";
@@ -274,14 +276,15 @@ function MessageThread({
             <LyricMark className="mt-0.5 shrink-0" />
             <div
               className={cn(
-                "max-w-[90%] whitespace-pre-wrap text-sm leading-relaxed",
+                "max-w-[90%] text-sm leading-relaxed",
                 m.pending || m.errored
                   ? "rounded-2xl border border-dashed border-hairline bg-surface px-4 py-3 text-muted-foreground"
                   : "text-foreground/90",
               )}
             >
-              {m.streaming && !m.content ? <TypingDots /> : <LinkedText text={m.content} />}
+              {m.streaming && !m.content ? <TypingDots /> : <Markdown text={m.content} />}
             </div>
+
           </div>
         ),
       )}
@@ -292,33 +295,6 @@ function MessageThread({
   );
 }
 
-/**
- * Renders assistant text with bare URLs turned into clickable source links.
- * The model is instructed to end answers with "Forbes — https://…" lines,
- * so the domain name becomes the visible, human-readable label.
- */
-function LinkedText({ text }: { text: string }) {
-  const parts = text.split(/(https?:\/\/[^\s<>()"']+)/g);
-  return (
-    <>
-      {parts.map((part, i) =>
-        /^https?:\/\//.test(part) ? (
-          <a
-            key={i}
-            href={part}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-primary underline underline-offset-2 hover:opacity-80"
-          >
-            {part.replace(/^https?:\/\/(www\.)?/, "").split("/")[0]}
-          </a>
-        ) : (
-          <span key={i}>{part}</span>
-        ),
-      )}
-    </>
-  );
-}
 
 function TypingDots() {
 
