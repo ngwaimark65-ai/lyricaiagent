@@ -295,33 +295,6 @@ function MessageThread({
   );
 }
 
-/**
- * Renders assistant text with bare URLs turned into clickable source links.
- * The model is instructed to end answers with "Forbes — https://…" lines,
- * so the domain name becomes the visible, human-readable label.
- */
-function LinkedText({ text }: { text: string }) {
-  const parts = text.split(/(https?:\/\/[^\s<>()"']+)/g);
-  return (
-    <>
-      {parts.map((part, i) =>
-        /^https?:\/\//.test(part) ? (
-          <a
-            key={i}
-            href={part}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-primary underline underline-offset-2 hover:opacity-80"
-          >
-            {part.replace(/^https?:\/\/(www\.)?/, "").split("/")[0]}
-          </a>
-        ) : (
-          <span key={i}>{part}</span>
-        ),
-      )}
-    </>
-  );
-}
 
 function TypingDots() {
 
