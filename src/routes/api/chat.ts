@@ -27,7 +27,12 @@ function todayLabel() {
   });
 }
 
-function systemPrompt(prefs: Body["preferences"], searchContext?: string, searchError?: string) {
+function systemPrompt(
+  prefs: Body["preferences"],
+  searchContext?: string,
+  searchError?: string,
+  failedParts: string[] = [],
+) {
   const lines = [
     'You are Lyric, a general-purpose AI assistant. Your tagline is "One AI. Everything you need."',
     "You are conversational, intelligent, helpful and friendly.",
