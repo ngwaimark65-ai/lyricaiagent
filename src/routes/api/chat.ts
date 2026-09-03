@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 
+import { decomposeQuery } from "@/lib/query-decompose.server";
 import { formatSearchResultsForModel, searchTavily } from "@/lib/search.server";
 import { shouldSearchWeb } from "@/lib/search-trigger";
 
@@ -26,7 +27,12 @@ function todayLabel() {
   });
 }
 
-function systemPrompt(prefs: Body["preferences"], searchContext?: string, searchError?: string) {
+function systemPrompt(
+  prefs: Body["preferences"],
+  searchContext?: string,
+  searchError?: string,
+  failedParts: string[] = [],
+) {
   const lines = [
     'You are Lyric, a general-purpose AI assistant. Your tagline is "One AI. Everything you need."',
     "You are conversational, intelligent, helpful and friendly.",
@@ -55,12 +61,22 @@ function systemPrompt(prefs: Body["preferences"], searchContext?: string, search
       "5. Cross-check important facts across at least two results when possible. If sources disagree, state the disagreement and which source is more recent or authoritative.",
       "6. Note how current the data is when it matters (use the Published dates).",
       "7. CITATIONS: never write bracketed numbers like [1] or [3]. Attribute inline by source name, e.g. \"according to Forbes\". End the answer with a 'Sources:' list containing only the sources you actually used, one per line, formatted exactly as: Forbes — https://example.com/page",
+      "8. The results may be grouped under several '### SEARCH TASK:' headings, one per part of the user's question. Answer EVERY part of the question, and ground each part only in the results under its own task heading. Never answer one part from memory because its results were thin.",
+      "9. Structure a multi-part answer with one short labelled section per entity asked about.",
       "",
       "===== SEARCH RESULTS =====",
       searchContext,
       "===== END SEARCH RESULTS =====",
     );
+    if (failedParts.length > 0) {
+      lines.push(
+        "",
+        `WEB SEARCH FAILED for these parts of the question: ${failedParts.join("; ")}.`,
+        "For those parts you have NO current data. Do not answer them from memory as if verified. Say plainly that you could not verify that part right now, and invite the user to ask it again on its own.",
+      );
+    }
   } else if (searchError) {
+
     lines.push(
       "",
       "A live web search was attempted for this question but failed, so you have no current results. Answer from your own knowledge and clearly tell the user that live web search was unavailable right now and that your information may be out of date.",
@@ -174,7 +190,7 @@ export const Route = createFileRoute("/api/chat")({
             messages: [
               {
                 role: "system",
-                content: systemPrompt(body.preferences, searchContext, searchError),
+                content: systemPrompt(body.preferences, searchContext, searchError, failedParts),
               },
               ...messages.slice(-20),
             ],
