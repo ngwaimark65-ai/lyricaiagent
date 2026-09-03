@@ -190,7 +190,7 @@ export const Route = createFileRoute("/api/chat")({
             messages: [
               {
                 role: "system",
-                content: systemPrompt(body.preferences, searchContext, searchError),
+                content: systemPrompt(body.preferences, searchContext, searchError, failedParts),
               },
               ...messages.slice(-20),
             ],
