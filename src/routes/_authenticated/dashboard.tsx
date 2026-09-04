@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { MessageSquarePlus, Camera, GraduationCap, ListChecks } from "lucide-react";
 import { AppShell } from "@/components/lyric/app-shell";
 import { UsageMeter } from "@/components/lyric/usage-meter";
-import { actions, useConversations, useLyricStore } from "@/lib/store";
+import { useConversations, useLyricStore } from "@/lib/store";
 import { SUBJECT_LABEL } from "@/lib/education";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
@@ -57,8 +57,8 @@ function DashboardPage() {
                 {recent.map((c) => (
                   <li key={c.id}>
                     <Link
-                      to="/chat"
-                      onClick={() => actions.selectConversation(c.id)}
+                      to="/chat/$conversationId"
+                      params={{ conversationId: c.id }}
                       className="flex items-center justify-between rounded-xl px-3 py-2.5 text-sm text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground"
                     >
                       <span className="truncate">{c.title}</span>
@@ -87,8 +87,8 @@ function DashboardPage() {
                 {learning.map((c) => (
                   <Link
                     key={c.id}
-                    to="/chat"
-                    onClick={() => actions.selectConversation(c.id)}
+                    to="/chat/$conversationId"
+                    params={{ conversationId: c.id }}
                     className="rounded-2xl border border-hairline bg-background p-4 transition-colors hover:border-brand/40"
                   >
                     <p className="font-mono text-[10px] uppercase tracking-widest text-brand">
