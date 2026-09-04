@@ -6,7 +6,7 @@ import { SUBJECT_LABEL } from "@/lib/education";
 import type { ExplanationStyle, Subject } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-export const Route = createFileRoute("/settings")({
+export const Route = createFileRoute("/_authenticated/settings")({
   head: () => ({
     meta: [
       { title: "Lyric profile and learning preferences" },

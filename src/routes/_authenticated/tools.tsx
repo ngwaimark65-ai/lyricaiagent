@@ -5,7 +5,7 @@ import { AppShell } from "@/components/lyric/app-shell";
 import { USAGE_COST, type UsageOperation } from "@/lib/types";
 import { actions } from "@/lib/store";
 
-export const Route = createFileRoute("/tools")({
+export const Route = createFileRoute("/_authenticated/tools")({
   head: () => ({
     meta: [
       { title: "Lyric Education Tools — tutor, quiz, flashcards, study plans" },

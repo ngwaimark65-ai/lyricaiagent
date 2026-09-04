@@ -5,7 +5,7 @@ import { UsageMeter } from "@/components/lyric/usage-meter";
 import { actions, useConversations, useLyricStore } from "@/lib/store";
 import { SUBJECT_LABEL } from "@/lib/education";
 
-export const Route = createFileRoute("/dashboard")({
+export const Route = createFileRoute("/_authenticated/dashboard")({
   head: () => ({
     meta: [
       { title: "Your Lyric dashboard" },
