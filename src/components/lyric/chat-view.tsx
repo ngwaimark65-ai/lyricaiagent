@@ -1,11 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import {
   ArrowUp,
+  Check,
+  Copy,
   Image as ImageIcon,
+  LogOut,
   Mic,
   Paperclip,
+  Pencil,
   Plus,
+  RefreshCw,
   Search,
   Trash2,
   PanelLeft,
@@ -14,31 +19,12 @@ import {
 import { toast } from "sonner";
 import { LyricLogo, LyricMark } from "@/components/lyric/logo";
 import { Markdown } from "@/components/lyric/markdown";
-
 import { UsageMeter } from "@/components/lyric/usage-meter";
 import { actions, useConversations, useLyricStore, useMessages } from "@/lib/store";
 import { SUBJECT_LABEL } from "@/lib/education";
+import { useAuth } from "@/hooks/use-auth";
 import type { Attachment, Message } from "@/lib/types";
 import { cn } from "@/lib/utils";
-
-export const Route = createFileRoute("/chat")({
-  head: () => ({
-    meta: [
-      { title: "Lyric Chat — ask anything, learn anything" },
-      {
-        name: "description",
-        content:
-          "Chat with Lyric about everyday questions, work and study. Tutoring, quizzes and image questions are built in.",
-      },
-      { property: "og:title", content: "Lyric Chat — ask anything, learn anything" },
-      {
-        property: "og:description",
-        content: "A general AI assistant with education intelligence built in.",
-      },
-    ],
-  }),
-  component: ChatPage,
-});
 
 const STARTERS = [
   "What is photosynthesis?",
@@ -48,23 +34,59 @@ const STARTERS = [
   "What is 25% of 840?",
 ];
 
-function ChatPage() {
+/**
+ * The chat surface. `conversationId` always comes from the route, so a refresh
+ * restores exactly the thread in the URL.
+ */
+export function ChatView({ conversationId }: { conversationId: string | null }) {
   const conversations = useConversations();
-  const activeId = useLyricStore((s) => s.activeConversationId);
-  const messages = useMessages(activeId);
-  const active = conversations.find((c) => c.id === activeId) ?? null;
+  const messages = useMessages(conversationId);
+  const loadingMessages = useLyricStore((s) => s.loadingMessages);
+  const active = conversations.find((c) => c.id === conversationId) ?? null;
+  const navigate = useNavigate();
+  const { signOut } = useAuth();
 
   const [query, setQuery] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const composerRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    void actions.selectConversation(conversationId);
+  }, [conversationId]);
+
+  useEffect(() => {
+    composerRef.current?.focus();
+  }, [conversationId]);
 
   const filtered = useMemo(
     () => conversations.filter((c) => c.title.toLowerCase().includes(query.toLowerCase())),
     [conversations, query],
   );
 
-  const send = (text: string, attachments: Attachment[] = []) => {
-    const id = activeId ?? actions.createConversation().id;
-    actions.sendMessage(id, text, attachments);
+  const send = async (text: string, attachments: Attachment[] = []) => {
+    let id = conversationId;
+    if (!id) {
+      const created = await actions.createConversation();
+      if (!created) {
+        toast.error("Couldn't start a new conversation. Please try again.");
+        return;
+      }
+      id = created.id;
+      void navigate({ to: "/chat/$conversationId", params: { conversationId: id } });
+    }
+    void actions.sendMessage(id, text, attachments);
+  };
+
+  const newConversation = () => {
+    setSidebarOpen(false);
+    void navigate({ to: "/chat" });
+  };
+
+  const removeConversation = async (id: string) => {
+    await actions.deleteConversation(id);
+    if (id === conversationId) void navigate({ to: "/chat" });
   };
 
   return (
@@ -89,10 +111,7 @@ function ChatPage() {
 
         <div className="space-y-3 px-4">
           <button
-            onClick={() => {
-              actions.createConversation();
-              setSidebarOpen(false);
-            }}
+            onClick={newConversation}
             className="flex w-full items-center gap-2 rounded-xl bg-brand px-4 py-2.5 text-sm font-semibold text-brand-foreground shadow-brand-glow"
           >
             <Plus className="size-4" /> New conversation
@@ -118,33 +137,66 @@ function ChatPage() {
             <div
               key={c.id}
               className={cn(
-                "group flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors",
-                c.id === activeId ? "bg-surface-2 text-foreground" : "text-muted-foreground hover:bg-surface",
+                "group flex items-center gap-1 rounded-lg px-3 py-2 text-sm transition-colors",
+                c.id === conversationId
+                  ? "bg-surface-2 text-foreground"
+                  : "text-muted-foreground hover:bg-surface",
               )}
             >
-              <button
-                onClick={() => {
-                  actions.selectConversation(c.id);
-                  setSidebarOpen(false);
-                }}
-                className="flex-1 truncate text-left"
-              >
-                {c.title}
-              </button>
-              <button
-                onClick={() => actions.deleteConversation(c.id)}
-                className="opacity-0 transition-opacity group-hover:opacity-100"
-                aria-label="Delete conversation"
-              >
-                <Trash2 className="size-3.5" />
-              </button>
+              {renamingId === c.id ? (
+                <input
+                  autoFocus
+                  value={renameValue}
+                  onChange={(e) => setRenameValue(e.target.value)}
+                  onBlur={() => {
+                    void actions.renameConversation(c.id, renameValue);
+                    setRenamingId(null);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      void actions.renameConversation(c.id, renameValue);
+                      setRenamingId(null);
+                    }
+                    if (e.key === "Escape") setRenamingId(null);
+                  }}
+                  className="min-w-0 flex-1 rounded-md border border-brand/50 bg-background px-2 py-1 text-sm outline-none"
+                />
+              ) : (
+                <>
+                  <Link
+                    to="/chat/$conversationId"
+                    params={{ conversationId: c.id }}
+                    onClick={() => setSidebarOpen(false)}
+                    className="min-w-0 flex-1 truncate text-left"
+                  >
+                    {c.title}
+                  </Link>
+                  <button
+                    onClick={() => {
+                      setRenamingId(c.id);
+                      setRenameValue(c.title);
+                    }}
+                    className="opacity-0 transition-opacity group-hover:opacity-100"
+                    aria-label="Rename conversation"
+                  >
+                    <Pencil className="size-3.5" />
+                  </button>
+                  <button
+                    onClick={() => void removeConversation(c.id)}
+                    className="opacity-0 transition-opacity group-hover:opacity-100"
+                    aria-label="Delete conversation"
+                  >
+                    <Trash2 className="size-3.5" />
+                  </button>
+                </>
+              )}
             </div>
           ))}
         </div>
 
         <div className="border-t border-hairline p-3">
           <UsageMeter compact />
-          <div className="mt-3 flex gap-2 text-xs text-muted-foreground">
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
             <Link to="/dashboard" className="hover:text-foreground">
               Dashboard
             </Link>
@@ -156,6 +208,12 @@ function ChatPage() {
             <Link to="/settings" className="hover:text-foreground">
               Settings
             </Link>
+            <button
+              onClick={() => void signOut()}
+              className="ml-auto flex items-center gap-1 hover:text-foreground"
+            >
+              <LogOut className="size-3.5" /> Sign out
+            </button>
           </div>
         </div>
       </aside>
@@ -197,14 +255,24 @@ function ChatPage() {
         <div className="flex-1 overflow-y-auto">
           <div className="mx-auto max-w-3xl px-4 py-6">
             {messages.length === 0 ? (
-              <EmptyState onPick={send} />
+              loadingMessages && conversationId ? (
+                <p className="py-16 text-center text-xs text-muted-foreground">
+                  Loading conversation…
+                </p>
+              ) : (
+                <EmptyState onPick={(text) => void send(text)} />
+              )
             ) : (
-              <MessageThread messages={messages} conversationId={activeId!} />
+              <MessageThread messages={messages} conversationId={conversationId!} />
             )}
           </div>
         </div>
 
-        <Composer onSend={send} busy={messages.some((m) => m.streaming)} />
+        <Composer
+          textareaRef={composerRef}
+          onSend={(text, attachments) => void send(text, attachments)}
+          busy={messages.some((m) => m.streaming)}
+        />
       </div>
     </div>
   );
@@ -243,6 +311,8 @@ function MessageThread({
 }) {
   const conversation = useConversations().find((c) => c.id === conversationId);
   const endRef = useRef<HTMLDivElement>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState("");
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -256,7 +326,7 @@ function MessageThread({
     <div className="space-y-6">
       {messages.map((m) =>
         m.role === "user" ? (
-          <div key={m.id} className="flex justify-end">
+          <div key={m.id} className="group flex justify-end">
             <div className="max-w-[80%] space-y-2">
               {m.attachments?.map((a) => (
                 <img
@@ -266,25 +336,81 @@ function MessageThread({
                   className="ml-auto max-h-48 rounded-2xl border border-hairline object-cover"
                 />
               ))}
-              <div className="rounded-2xl rounded-tr-none bg-surface-2 px-4 py-3 text-sm">
-                {m.content}
-              </div>
+              {editingId === m.id ? (
+                <div className="space-y-2 rounded-2xl border border-brand/40 bg-surface p-3">
+                  <textarea
+                    autoFocus
+                    value={editValue}
+                    onChange={(e) => setEditValue(e.target.value)}
+                    rows={3}
+                    className="w-full resize-none bg-transparent text-sm outline-none"
+                  />
+                  <div className="flex justify-end gap-2">
+                    <button
+                      onClick={() => setEditingId(null)}
+                      className="rounded-lg bg-surface-2 px-3 py-1.5 text-xs font-semibold"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={() => {
+                        const next = editValue.trim();
+                        setEditingId(null);
+                        if (next && next !== m.content) void actions.editMessage(m.id, next);
+                      }}
+                      className="rounded-lg bg-brand px-3 py-1.5 text-xs font-semibold text-brand-foreground"
+                    >
+                      Send
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div className="rounded-2xl rounded-tr-none bg-surface-2 px-4 py-3 text-sm">
+                    {m.content}
+                  </div>
+                  <div className="flex justify-end gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                    <CopyButton text={m.content} />
+                    <MessageAction
+                      label="Edit message"
+                      onClick={() => {
+                        setEditingId(m.id);
+                        setEditValue(m.content);
+                      }}
+                    >
+                      <Pencil className="size-3.5" />
+                    </MessageAction>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         ) : (
-          <div key={m.id} className="flex gap-3">
+          <div key={m.id} className="group flex gap-3">
             <LyricMark className="mt-0.5 shrink-0" />
-            <div
-              className={cn(
-                "max-w-[90%] text-sm leading-relaxed",
-                m.pending || m.errored
-                  ? "rounded-2xl border border-dashed border-hairline bg-surface px-4 py-3 text-muted-foreground"
-                  : "text-foreground/90",
+            <div className="min-w-0 max-w-[90%] space-y-2">
+              <div
+                className={cn(
+                  "text-sm leading-relaxed",
+                  m.pending || m.errored
+                    ? "rounded-2xl border border-dashed border-hairline bg-surface px-4 py-3 text-muted-foreground"
+                    : "text-foreground/90",
+                )}
+              >
+                {m.streaming && !m.content ? <TypingDots /> : <Markdown text={m.content} />}
+              </div>
+              {!m.streaming && (
+                <div className="flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                  <CopyButton text={m.content} />
+                  <MessageAction
+                    label="Regenerate response"
+                    onClick={() => void actions.regenerate(m.id)}
+                  >
+                    <RefreshCw className="size-3.5" />
+                  </MessageAction>
+                </div>
               )}
-            >
-              {m.streaming && !m.content ? <TypingDots /> : <Markdown text={m.content} />}
             </div>
-
           </div>
         ),
       )}
@@ -295,9 +421,45 @@ function MessageThread({
   );
 }
 
+function MessageAction({
+  children,
+  label,
+  onClick,
+}: {
+  children: React.ReactNode;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      aria-label={label}
+      title={label}
+      className="grid size-7 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground"
+    >
+      {children}
+    </button>
+  );
+}
+
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <MessageAction
+      label={copied ? "Copied" : "Copy message"}
+      onClick={() => {
+        void navigator.clipboard.writeText(text).then(() => {
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1500);
+        });
+      }}
+    >
+      {copied ? <Check className="size-3.5 text-success" /> : <Copy className="size-3.5" />}
+    </MessageAction>
+  );
+}
 
 function TypingDots() {
-
   return (
     <span className="flex items-center gap-1" aria-label="Lyric is typing">
       {[0, 1, 2].map((i) => (
@@ -367,9 +529,11 @@ function QuizOffer({ conversationId }: { conversationId: string }) {
 function Composer({
   onSend,
   busy,
+  textareaRef,
 }: {
   onSend: (text: string, attachments: Attachment[]) => void;
   busy: boolean;
+  textareaRef: React.RefObject<HTMLTextAreaElement | null>;
 }) {
   const [value, setValue] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
@@ -382,6 +546,7 @@ function Composer({
     onSend(value.trim() || "Please look at this.", attachments);
     setValue("");
     setAttachments([]);
+    textareaRef.current?.focus();
   };
 
   const addFiles = (files: FileList | null, kind: Attachment["kind"]) => {
@@ -439,6 +604,7 @@ function Composer({
           </div>
 
           <textarea
+            ref={textareaRef}
             value={value}
             onChange={(e) => setValue(e.target.value)}
             onKeyDown={(e) => {
