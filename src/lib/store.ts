@@ -392,6 +392,8 @@ async function runTurn(
     ),
   });
 
+  console.log("[lyric] turn", { conversationId, isFirst, title });
+
   actions.consumeUsage(hasImage ? "vision.solve" : "chat.message");
 
   void supabase
