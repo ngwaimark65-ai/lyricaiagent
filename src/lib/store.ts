@@ -392,8 +392,6 @@ async function runTurn(
     ),
   });
 
-  console.log("[lyric] turn", { conversationId, isFirst, title });
-
   actions.consumeUsage(hasImage ? "vision.solve" : "chat.message");
 
   void supabase
@@ -405,9 +403,8 @@ async function runTurn(
       updated_at: now,
     })
     .eq("id", conversationId)
-    .select()
-    .then(({ data, error }) => {
-      console.log("[lyric] conv update", data, error?.message);
+    .then(({ error }) => {
+      if (error) console.error("[lyric] conversation update failed", error.message);
     });
 
   if (persistUser) {
