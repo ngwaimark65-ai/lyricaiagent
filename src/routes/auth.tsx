@@ -70,7 +70,7 @@ function AuthPage() {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
       } else if (mode === "signup") {
-        const { error } = await supabase.auth.signUp({
+        const { data, error } = await supabase.auth.signUp({
           email,
           password,
           options: {
@@ -80,8 +80,11 @@ function AuthPage() {
         });
         if (error) throw error;
         toast.success("Account created", {
-          description: "You're all set — taking you to your chat.",
+          description: data.session
+            ? "You're all set — taking you to your chat."
+            : "Check your email for a confirmation link, then sign in.",
         });
+        if (!data.session) setMode("login");
       } else {
         const { error } = await supabase.auth.resetPasswordForEmail(email, {
           redirectTo: `${window.location.origin}/auth`,

@@ -290,7 +290,11 @@ export const actions = {
         c.id === conversationId ? { ...c, quizOffered: true } : c,
       ),
     });
-    void supabase.from("conversations").update({ quiz_offered: true }).eq("id", conversationId);
+    void supabase
+      .from("conversations")
+      .update({ quiz_offered: true })
+      .eq("id", conversationId)
+      .then(() => {});
   },
 
   declineQuiz(conversationId: string) {
@@ -302,7 +306,8 @@ export const actions = {
     void supabase
       .from("conversations")
       .update({ quiz_offered: true, quiz_declined: true })
-      .eq("id", conversationId);
+      .eq("id", conversationId)
+      .then(() => {});
   },
 
   consumeUsage(operation: UsageOperation) {
@@ -322,14 +327,19 @@ export const actions = {
     void supabase
       .from("profiles")
       .update({ display_name: profile.displayName, email: profile.email })
-      .eq("id", state.userId);
+      .eq("id", state.userId)
+      .then(() => {});
   },
 
   updatePreferences(patch: Partial<LearningPreferences>) {
     const preferences = { ...state.profile.preferences, ...patch };
     set({ profile: { ...state.profile, preferences } });
     if (!state.userId) return;
-    void supabase.from("profiles").update({ preferences }).eq("id", state.userId);
+    void supabase
+      .from("profiles")
+      .update({ preferences })
+      .eq("id", state.userId)
+      .then(() => {});
   },
 };
 
@@ -402,7 +412,10 @@ async function runTurn(
       title,
       updated_at: now,
     })
-    .eq("id", conversationId);
+    .eq("id", conversationId)
+    .then(({ error }) => {
+      if (error) console.error("[lyric] conversation update failed", error.message);
+    });
 
   if (persistUser) {
     const { data } = await supabase
