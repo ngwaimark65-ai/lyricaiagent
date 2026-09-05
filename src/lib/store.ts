@@ -402,7 +402,10 @@ async function runTurn(
       title,
       updated_at: now,
     })
-    .eq("id", conversationId);
+    .eq("id", conversationId)
+    .then(({ error }) => {
+      if (error) console.error("[lyric] conversation update failed", error.message);
+    });
 
   if (persistUser) {
     const { data } = await supabase
