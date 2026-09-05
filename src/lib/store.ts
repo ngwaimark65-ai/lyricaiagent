@@ -405,8 +405,9 @@ async function runTurn(
       updated_at: now,
     })
     .eq("id", conversationId)
-    .then(({ error }) => {
-      if (error) console.error("[lyric] conversation update failed", error.message);
+    .select()
+    .then(({ data, error }) => {
+      console.log("[lyric] conv update", data, error?.message);
     });
 
   if (persistUser) {
