@@ -1,7 +1,9 @@
-import { useState } from "react";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { LyricLogo } from "@/components/lyric/logo";
+import { supabase } from "@/integrations/supabase/client";
+import { lovable } from "@/integrations/lovable/index";
 import { cn } from "@/lib/utils";
 
 type Mode = "login" | "signup" | "forgot";
@@ -12,7 +14,8 @@ export const Route = createFileRoute("/auth")({
       { title: "Sign in to Lyric" },
       {
         name: "description",
-        content: "Create a Lyric account or sign in to continue your conversations and study progress.",
+        content:
+          "Create a Lyric account or sign in to continue your conversations and study progress.",
       },
       { property: "og:title", content: "Sign in to Lyric" },
       { property: "og:description", content: "One AI. Everything you need." },
@@ -41,12 +44,70 @@ const COPY: Record<Mode, { title: string; sub: string; cta: string }> = {
 
 function AuthPage() {
   const [mode, setMode] = useState<Mode>("login");
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const navigate = useNavigate();
   const copy = COPY[mode];
 
-  const notConnected = () =>
-    toast("Authentication isn't connected yet", {
-      description: "This form is wired for Lovable Cloud auth to be enabled in a later step.",
+  // Already signed in (or just returned from Google) → go straight to chat.
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      if (data.session) void navigate({ to: "/chat" });
     });
+    const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => {
+      if (session) void navigate({ to: "/chat" });
+    });
+    return () => sub.subscription.unsubscribe();
+  }, [navigate]);
+
+  const submit = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      if (mode === "login") {
+        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) throw error;
+      } else if (mode === "signup") {
+        const { error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            emailRedirectTo: `${window.location.origin}/chat`,
+            data: { display_name: name },
+          },
+        });
+        if (error) throw error;
+        toast.success("Account created", {
+          description: "You're all set — taking you to your chat.",
+        });
+      } else {
+        const { error } = await supabase.auth.resetPasswordForEmail(email, {
+          redirectTo: `${window.location.origin}/auth`,
+        });
+        if (error) throw error;
+        toast.success("Reset link sent", { description: "Check your inbox for the link." });
+        setMode("login");
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Something went wrong. Try again.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const google = async () => {
+    const result = await lovable.auth.signInWithOAuth("google", {
+      redirect_uri: window.location.origin,
+    });
+    if (result.error) {
+      toast.error("Google sign-in failed. Please try again.");
+      return;
+    }
+    if (result.redirected) return;
+    void navigate({ to: "/chat" });
+  };
 
   return (
     <div className="relative flex min-h-screen flex-col items-center justify-center bg-background px-6 py-12">
@@ -80,20 +141,41 @@ function AuthPage() {
           className="space-y-4"
           onSubmit={(e) => {
             e.preventDefault();
-            notConnected();
+            void submit();
           }}
         >
-          {mode === "signup" && <Field label="Full name" type="text" placeholder="Ada Lovelace" />}
-          <Field label="Email" type="email" placeholder="you@example.com" />
+          {mode === "signup" && (
+            <Field
+              label="Full name"
+              type="text"
+              placeholder="Ada Lovelace"
+              value={name}
+              onChange={setName}
+            />
+          )}
+          <Field
+            label="Email"
+            type="email"
+            placeholder="you@example.com"
+            value={email}
+            onChange={setEmail}
+          />
           {mode !== "forgot" && (
-            <Field label="Password" type="password" placeholder="••••••••" />
+            <Field
+              label="Password"
+              type="password"
+              placeholder="••••••••"
+              value={password}
+              onChange={setPassword}
+            />
           )}
 
           <button
             type="submit"
-            className="w-full rounded-2xl bg-brand py-3.5 font-semibold text-brand-foreground shadow-brand-glow transition-transform active:scale-[0.99]"
+            disabled={busy}
+            className="w-full rounded-2xl bg-brand py-3.5 font-semibold text-brand-foreground shadow-brand-glow transition-transform active:scale-[0.99] disabled:opacity-60"
           >
-            {copy.cta}
+            {busy ? "Please wait…" : copy.cta}
           </button>
         </form>
 
@@ -105,7 +187,7 @@ function AuthPage() {
               <span className="h-px flex-1 bg-border" />
             </div>
             <button
-              onClick={notConnected}
+              onClick={() => void google()}
               className="flex w-full items-center justify-center gap-3 rounded-2xl border border-hairline bg-surface py-3.5 text-sm font-medium transition-colors hover:bg-surface-2"
             >
               <span className="grid size-5 place-items-center rounded-full bg-foreground text-[11px] font-bold text-background">
@@ -142,10 +224,14 @@ function Field({
   label,
   type,
   placeholder,
+  value,
+  onChange,
 }: {
   label: string;
   type: string;
   placeholder: string;
+  value: string;
+  onChange: (value: string) => void;
 }) {
   return (
     <label className="block">
@@ -153,6 +239,8 @@ function Field({
       <input
         type={type}
         placeholder={placeholder}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
         className="w-full rounded-xl border border-hairline bg-surface px-4 py-3 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground/60 focus:border-brand/60"
       />
     </label>
