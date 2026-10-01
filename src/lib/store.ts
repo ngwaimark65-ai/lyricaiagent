@@ -8,11 +8,19 @@ import type {
   Profile,
   Subject,
   UsageOperation,
-  UsageState,
 } from "./types";
-import { USAGE_COST } from "./types";
+
 import { detectSubject, isEducational } from "./education";
 import { shouldSearchWeb } from "./search-trigger";
+import {
+  emptyUsage,
+  getLimits,
+  type PlanId,
+  type Subscription,
+  type SubscriptionStatus,
+  type UsageSnapshot,
+} from "./plan-config";
+import { getAccountState, changePlan } from "./subscription.functions";
 
 /**
  * Client store backed by Lovable Cloud.
@@ -20,6 +28,9 @@ import { shouldSearchWeb } from "./search-trigger";
  * Conversations and messages live in the database, scoped to the signed-in
  * user by row-level security. This module keeps a small in-memory mirror so
  * the UI stays instant while writes go to the backend.
+ *
+ * Plan, subscription state and usage are mirrored here too, but the numbers
+ * the app enforces always come from the server.
  */
 
 interface LyricState {
@@ -28,7 +39,10 @@ interface LyricState {
   messages: Message[];
   activeConversationId: string | null;
   profile: Profile;
-  usage: UsageState;
+  subscription: Subscription;
+  usage: UsageSnapshot;
+  /** Set when the server refused a request because an allowance ran out. */
+  limitNotice: string | null;
   loadingConversations: boolean;
   loadingMessages: boolean;
 }
@@ -51,16 +65,28 @@ const defaultProfile: Profile = {
   },
 };
 
+const defaultSubscription: Subscription = {
+  plan: "free",
+  status: "active",
+  currentPeriodStart: null,
+  currentPeriodEnd: null,
+  cancelAtPeriodEnd: false,
+  provider: null,
+};
+
 const initialState: LyricState = {
   userId: null,
   conversations: [],
   messages: [],
   activeConversationId: null,
   profile: defaultProfile,
-  usage: { used: 0, allowance: 60, resetsAt: "Resets daily" },
+  subscription: defaultSubscription,
+  usage: emptyUsage("free"),
+  limitNotice: null,
   loadingConversations: false,
   loadingMessages: false,
 };
+
 
 let state: LyricState = initialState;
 const listeners = new Set<() => void>();
@@ -136,9 +162,12 @@ function titleFrom(text: string) {
 }
 
 export const actions = {
-  /** Loads the signed-in user's profile and recent conversations. */
+  /** Loads the signed-in user's profile, subscription and recent conversations. */
   async loadForUser(userId: string) {
-    if (state.userId === userId && state.conversations.length > 0) return;
+    if (state.userId === userId && state.conversations.length > 0) {
+      void actions.refreshAccount();
+      return;
+    }
     set({ userId, loadingConversations: true });
 
     const [{ data: profileRow }, { data: convoRows }] = await Promise.all([
@@ -163,7 +192,40 @@ export const actions = {
       },
       conversations: (convoRows ?? []).map((r) => toConversation(r as ConversationRow)),
     });
+
+    await actions.refreshAccount();
   },
+
+  /** Pulls the authoritative plan and today's usage from the server. */
+  async refreshAccount() {
+    try {
+      const account = await getAccountState();
+      set({
+        subscription: account.subscription,
+        usage: account.usage,
+        profile: { ...state.profile, plan: account.subscription.plan },
+      });
+    } catch (error) {
+      console.error("[lyric] account load failed", error);
+    }
+  },
+
+  /** Switches plan. Payments are not connected, so this calls the server seam. */
+  async selectPlan(plan: PlanId) {
+    const account = await changePlan({ data: { plan } });
+    set({
+      subscription: account.subscription,
+      usage: account.usage,
+      limitNotice: null,
+      profile: { ...state.profile, plan: account.subscription.plan },
+    });
+    return account;
+  },
+
+  dismissLimitNotice() {
+    set({ limitNotice: null });
+  },
+
 
   reset() {
     state = initialState;
@@ -310,15 +372,20 @@ export const actions = {
       .then(() => {});
   },
 
-  consumeUsage(operation: UsageOperation) {
-    const cost = USAGE_COST[operation];
+  /**
+   * Optimistic local counter so the meter moves immediately; the server is
+   * the source of truth and `refreshAccount` reconciles it.
+   */
+  consumeUsage(_operation: UsageOperation, searches = 0) {
     set({
       usage: {
         ...state.usage,
-        used: Math.min(state.usage.allowance, state.usage.used + cost),
+        messagesUsed: Math.min(state.usage.messagesLimit, state.usage.messagesUsed + 1),
+        searchesUsed: Math.min(state.usage.searchesLimit, state.usage.searchesUsed + searches),
       },
     });
   },
+
 
   updateProfile(patch: Partial<Profile>) {
     const profile = { ...state.profile, ...patch };
