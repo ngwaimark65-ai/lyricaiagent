@@ -209,10 +209,17 @@ export const Route = createFileRoute("/api/chat")({
             messages: [
               {
                 role: "system",
-                content: systemPrompt(body.preferences, searchContext, searchError, failedParts),
+                content: [
+                  systemPrompt(body.preferences, searchContext, searchError, failedParts),
+                  searchBlocked
+                    ? "\nThe user has used their whole daily live web search allowance, so no current results are available for this question. Answer from your own knowledge, and open by telling them plainly that their daily web search allowance is used up, that the answer may be out of date, and that upgrading their Lyric plan raises the allowance."
+                    : "",
+                ].join(""),
               },
-              ...messages.slice(-20),
+              // Conversation memory length is a plan entitlement.
+              ...messages.slice(-Math.max(2, quota.entitlements.contextMessages)),
             ],
+
           }),
         });
 
