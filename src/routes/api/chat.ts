@@ -3,6 +3,8 @@ import { createFileRoute } from "@tanstack/react-router";
 import { decomposeQuery } from "@/lib/query-decompose.server";
 import { formatSearchResultsForModel, searchTavily } from "@/lib/search.server";
 import { shouldSearchWeb } from "@/lib/search-trigger";
+import { checkQuota, consumeUsage, getUserIdFromRequest } from "@/lib/entitlements.server";
+
 
 type ChatMessage = { role: "user" | "assistant" | "system"; content: string };
 
