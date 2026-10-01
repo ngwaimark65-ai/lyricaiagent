@@ -104,14 +104,31 @@ export const Route = createFileRoute("/api/chat")({
           return new Response("AI is not configured.", { status: 500 });
         }
 
+        // Authorization is enforced here, not in the browser: the plan and the
+        // remaining allowance both come from the database.
+        const userId = await getUserIdFromRequest(request);
+        if (!userId) {
+          return new Response("Please sign in to chat with Lyric.", { status: 401 });
+        }
+
         let searchContext: string | undefined;
         let searchError: string | undefined;
         let failedParts: string[] = [];
         const lastUser = [...messages].reverse().find((m) => m.role === "user");
         // The server re-evaluates the trigger so a stale or missing client flag
         // can never cause a current-information answer from model memory.
-        const needsSearch = body.useSearch || shouldSearchWeb(lastUser?.content ?? "");
+        const wantsSearch = body.useSearch || shouldSearchWeb(lastUser?.content ?? "");
+
+        const quota = await checkQuota(userId, wantsSearch);
+        if (!quota.allowed) {
+          return new Response(quota.message ?? "Daily limit reached.", { status: 429 });
+        }
+        const searchBlocked = quota.searchBlocked;
+        const needsSearch = wantsSearch && !searchBlocked;
+        await consumeUsage(userId, 1, needsSearch ? 1 : 0);
+
         if (needsSearch && lastUser?.content) {
+
           const startedAt = Date.now();
           const now = new Date();
           const monthYear = now.toLocaleDateString("en-US", {
