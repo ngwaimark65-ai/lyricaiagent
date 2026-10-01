@@ -7,12 +7,18 @@ import type {
   Message,
   Profile,
   Subject,
-  UsageOperation,
-  UsageState,
 } from "./types";
-import { USAGE_COST } from "./types";
 import { detectSubject, isEducational } from "./education";
 import { shouldSearchWeb } from "./search-trigger";
+import {
+  emptyUsage,
+  getLimits,
+  type PlanId,
+  type Subscription,
+  type SubscriptionStatus,
+  type UsageSnapshot,
+} from "./plan-config";
+import { getAccountState, changePlan } from "./subscription.functions";
 
 /**
  * Client store backed by Lovable Cloud.
@@ -20,6 +26,9 @@ import { shouldSearchWeb } from "./search-trigger";
  * Conversations and messages live in the database, scoped to the signed-in
  * user by row-level security. This module keeps a small in-memory mirror so
  * the UI stays instant while writes go to the backend.
+ *
+ * Plan, subscription state and usage are mirrored here too, but the numbers
+ * the app enforces always come from the server.
  */
 
 interface LyricState {
@@ -28,7 +37,10 @@ interface LyricState {
   messages: Message[];
   activeConversationId: string | null;
   profile: Profile;
-  usage: UsageState;
+  subscription: Subscription;
+  usage: UsageSnapshot;
+  /** Set when the server refused a request because an allowance ran out. */
+  limitNotice: string | null;
   loadingConversations: boolean;
   loadingMessages: boolean;
 }
@@ -51,16 +63,28 @@ const defaultProfile: Profile = {
   },
 };
 
+const defaultSubscription: Subscription = {
+  plan: "free",
+  status: "active",
+  currentPeriodStart: null,
+  currentPeriodEnd: null,
+  cancelAtPeriodEnd: false,
+  provider: null,
+};
+
 const initialState: LyricState = {
   userId: null,
   conversations: [],
   messages: [],
   activeConversationId: null,
   profile: defaultProfile,
-  usage: { used: 0, allowance: 60, resetsAt: "Resets daily" },
+  subscription: defaultSubscription,
+  usage: emptyUsage("free"),
+  limitNotice: null,
   loadingConversations: false,
   loadingMessages: false,
 };
+
 
 let state: LyricState = initialState;
 const listeners = new Set<() => void>();
