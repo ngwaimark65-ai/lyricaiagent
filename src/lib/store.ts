@@ -7,7 +7,9 @@ import type {
   Message,
   Profile,
   Subject,
+  UsageOperation,
 } from "./types";
+
 import { detectSubject, isEducational } from "./education";
 import { shouldSearchWeb } from "./search-trigger";
 import {
