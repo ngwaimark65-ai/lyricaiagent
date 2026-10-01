@@ -160,9 +160,12 @@ function titleFrom(text: string) {
 }
 
 export const actions = {
-  /** Loads the signed-in user's profile and recent conversations. */
+  /** Loads the signed-in user's profile, subscription and recent conversations. */
   async loadForUser(userId: string) {
-    if (state.userId === userId && state.conversations.length > 0) return;
+    if (state.userId === userId && state.conversations.length > 0) {
+      void actions.refreshAccount();
+      return;
+    }
     set({ userId, loadingConversations: true });
 
     const [{ data: profileRow }, { data: convoRows }] = await Promise.all([
@@ -187,7 +190,40 @@ export const actions = {
       },
       conversations: (convoRows ?? []).map((r) => toConversation(r as ConversationRow)),
     });
+
+    await actions.refreshAccount();
   },
+
+  /** Pulls the authoritative plan and today's usage from the server. */
+  async refreshAccount() {
+    try {
+      const account = await getAccountState();
+      set({
+        subscription: account.subscription,
+        usage: account.usage,
+        profile: { ...state.profile, plan: account.subscription.plan },
+      });
+    } catch (error) {
+      console.error("[lyric] account load failed", error);
+    }
+  },
+
+  /** Switches plan. Payments are not connected, so this calls the server seam. */
+  async selectPlan(plan: PlanId) {
+    const account = await changePlan({ data: { plan } });
+    set({
+      subscription: account.subscription,
+      usage: account.usage,
+      limitNotice: null,
+      profile: { ...state.profile, plan: account.subscription.plan },
+    });
+    return account;
+  },
+
+  dismissLimitNotice() {
+    set({ limitNotice: null });
+  },
+
 
   reset() {
     state = initialState;
