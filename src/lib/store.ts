@@ -370,15 +370,20 @@ export const actions = {
       .then(() => {});
   },
 
-  consumeUsage(operation: UsageOperation) {
-    const cost = USAGE_COST[operation];
+  /**
+   * Optimistic local counter so the meter moves immediately; the server is
+   * the source of truth and `refreshAccount` reconciles it.
+   */
+  consumeUsage(_operation: UsageOperation, searches = 0) {
     set({
       usage: {
         ...state.usage,
-        used: Math.min(state.usage.allowance, state.usage.used + cost),
+        messagesUsed: Math.min(state.usage.messagesLimit, state.usage.messagesUsed + 1),
+        searchesUsed: Math.min(state.usage.searchesLimit, state.usage.searchesUsed + searches),
       },
     });
   },
+
 
   updateProfile(patch: Partial<Profile>) {
     const profile = { ...state.profile, ...patch };
