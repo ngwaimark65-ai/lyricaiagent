@@ -564,6 +564,8 @@ function Composer({
   return (
     <div className="border-t border-hairline bg-background p-4">
       <div className="mx-auto max-w-3xl">
+        <LimitBanner />
+
         {attachments.length > 0 && (
           <div className="mb-2 flex flex-wrap gap-2">
             {attachments.map((a) => (
