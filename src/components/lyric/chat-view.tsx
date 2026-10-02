@@ -564,6 +564,8 @@ function Composer({
   return (
     <div className="border-t border-hairline bg-background p-4">
       <div className="mx-auto max-w-3xl">
+        <LimitBanner />
+
         {attachments.length > 0 && (
           <div className="mb-2 flex flex-wrap gap-2">
             {attachments.map((a) => (
@@ -667,5 +669,51 @@ function IconButton({
     >
       {children}
     </button>
+  );
+}
+
+/** Explains a reached allowance instead of failing silently. */
+function LimitBanner() {
+  const notice = useLyricStore((s) => s.limitNotice);
+  const usage = useLyricStore((s) => s.usage);
+  const plan = useLyricStore((s) => s.subscription.plan);
+  const messagesOut = usage.messagesUsed >= usage.messagesLimit;
+  const searchesOut = usage.searchesUsed >= usage.searchesLimit;
+
+  const text =
+    notice ??
+    (messagesOut
+      ? `You've used all ${usage.messagesLimit} AI messages for today. Your allowance resets at midnight UTC.`
+      : searchesOut
+        ? `You've used all ${usage.searchesLimit} live web searches for today. Lyric still answers, but current-events questions won't be checked against the web until it resets.`
+        : null);
+  if (!text) return null;
+
+  return (
+    <div
+      role="status"
+      className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-brand/40 bg-brand/10 px-4 py-3 text-sm"
+    >
+      <p className="flex-1 text-foreground">{text}</p>
+      <div className="flex items-center gap-2">
+        {plan !== "pro" && (
+          <Link
+            to="/pricing"
+            className="rounded-xl bg-brand px-3 py-1.5 text-xs font-semibold text-brand-foreground"
+          >
+            See upgrade options
+          </Link>
+        )}
+        {notice && (
+          <button
+            onClick={() => actions.dismissLimitNotice()}
+            aria-label="Dismiss"
+            className="text-muted-foreground hover:text-foreground"
+          >
+            <X className="size-4" />
+          </button>
+        )}
+      </div>
+    </div>
   );
 }

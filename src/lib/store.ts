@@ -14,10 +14,8 @@ import { detectSubject, isEducational } from "./education";
 import { shouldSearchWeb } from "./search-trigger";
 import {
   emptyUsage,
-  getLimits,
   type PlanId,
   type Subscription,
-  type SubscriptionStatus,
   type UsageSnapshot,
 } from "./plan-config";
 import { getAccountState, changePlan } from "./subscription.functions";
@@ -469,7 +467,7 @@ async function runTurn(
     ),
   });
 
-  actions.consumeUsage(hasImage ? "vision.solve" : "chat.message");
+  actions.consumeUsage(hasImage ? "vision.solve" : "chat.message", useSearch ? 1 : 0);
 
   void supabase
     .from("conversations")
@@ -527,9 +525,14 @@ async function runTurn(
   };
 
   try {
+    const { data: sessionData } = await supabase.auth.getSession();
+    const token = sessionData.session?.access_token;
     const response = await fetch("/api/chat", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
       body: JSON.stringify({
         messages: [
           ...history,
@@ -548,8 +551,12 @@ async function runTurn(
     if (!response.ok || !response.body) {
       const detail = await response.text().catch(() => "");
       const message = detail || "Lyric couldn't reach the AI model. Please try again.";
+      if (response.status === 429 && /allowance|limit/i.test(detail)) {
+        set({ limitNotice: message });
+      }
       patchReply({ streaming: false, errored: true, content: message });
       await persistReply(message, true);
+      void actions.refreshAccount();
       return;
     }
 
@@ -565,6 +572,8 @@ async function runTurn(
     const final = text.trim() || "The model returned an empty response. Please try again.";
     patchReply({ content: final, streaming: false });
     await persistReply(final, false);
+    void actions.refreshAccount();
+
   } catch {
     const message =
       "Network error while contacting Lyric's AI. Please check your connection and try again.";
