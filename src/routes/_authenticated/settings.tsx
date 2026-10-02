@@ -1,8 +1,11 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { AppShell } from "@/components/lyric/app-shell";
+import { UsageMeter } from "@/components/lyric/usage-meter";
 import { actions, useLyricStore } from "@/lib/store";
 import { SUBJECT_LABEL } from "@/lib/education";
+import { getPlan } from "@/lib/plan-config";
+import { useAuth } from "@/hooks/use-auth";
 import type { ExplanationStyle, Subject } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -36,13 +39,42 @@ const SUBJECTS = Object.keys(SUBJECT_LABEL) as Subject[];
 
 function SettingsPage() {
   const profile = useLyricStore((s) => s.profile);
+  const subscription = useLyricStore((s) => s.subscription);
+  const { user, signOut } = useAuth();
   const prefs = profile.preferences;
+  const plan = getPlan(subscription.plan);
 
   return (
     <AppShell
-      title="Profile and personalisation"
-      subtitle="Saved locally for now; these fields map to your Lyric profile once accounts are connected."
+      title="Account and personalisation"
+      subtitle="Your profile, plan and learning preferences are saved to your Lyric account."
     >
+      <section className="mb-4 grid gap-4 rounded-3xl border border-hairline bg-surface p-6 lg:grid-cols-[1fr_auto]">
+        <div className="space-y-1">
+          <h2 className="text-sm font-semibold">Subscription</h2>
+          <p className="text-2xl font-bold">
+            {plan.name}{" "}
+            <span className="text-sm font-normal text-muted-foreground">
+              {plan.priceLabel}/month · {subscription.status}
+            </span>
+          </p>
+          <p className="text-xs text-muted-foreground">
+            {subscription.currentPeriodEnd
+              ? `${subscription.cancelAtPeriodEnd ? "Ends" : "Renews"} ${new Date(subscription.currentPeriodEnd).toLocaleDateString()}`
+              : "No renewal — Free never expires."}
+          </p>
+          <div className="pt-2">
+            <Link
+              to="/pricing"
+              className="inline-flex rounded-xl bg-brand px-4 py-2 text-xs font-semibold text-brand-foreground"
+            >
+              {subscription.plan === "pro" ? "Manage plan" : "Upgrade plan"}
+            </Link>
+          </div>
+        </div>
+        <UsageMeter compact className="lg:w-80" />
+      </section>
+
       <div className="grid gap-4 lg:grid-cols-2">
         <section className="space-y-4 rounded-3xl border border-hairline bg-surface p-6">
           <h2 className="text-sm font-semibold">Account</h2>
@@ -52,12 +84,17 @@ function SettingsPage() {
             placeholder="Ada Lovelace"
             onChange={(displayName) => actions.updateProfile({ displayName })}
           />
-          <Field
-            label="Email"
-            value={profile.email}
-            placeholder="you@example.com"
-            onChange={(email) => actions.updateProfile({ email })}
-          />
+          <label className="block">
+            <span className="mb-2 block text-xs font-medium text-muted-foreground">
+              Sign-in email
+            </span>
+            <input
+              value={user?.email ?? profile.email}
+              readOnly
+              className="w-full cursor-not-allowed rounded-xl border border-hairline bg-background/50 px-4 py-3 text-sm text-muted-foreground outline-none"
+            />
+          </label>
+
           <Field
             label="Grade / year"
             value={prefs.gradeYear}
