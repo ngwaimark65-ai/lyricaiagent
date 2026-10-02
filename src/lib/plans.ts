@@ -8,6 +8,6 @@ export const PLANS: Plan[] = PLAN_CATALOG.map((p) => ({
   price: p.priceLabel,
   cadence: p.cadence,
   blurb: p.blurb,
-  highlighted: p.highlighted,
+  highlighted: !!p.highlighted,
   features: p.highlights,
 }));
