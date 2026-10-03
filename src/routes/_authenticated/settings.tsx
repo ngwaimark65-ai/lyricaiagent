@@ -94,6 +94,14 @@ function SettingsPage() {
               className="w-full cursor-not-allowed rounded-xl border border-hairline bg-background/50 px-4 py-3 text-sm text-muted-foreground outline-none"
             />
           </label>
+          <ChangePassword email={user?.email ?? profile.email} />
+          <button
+            onClick={() => void signOut()}
+            className="w-full rounded-xl border border-hairline py-2.5 text-xs font-medium text-muted-foreground hover:text-foreground"
+          >
+            Log out
+          </button>
+
 
           <Field
             label="Grade / year"
