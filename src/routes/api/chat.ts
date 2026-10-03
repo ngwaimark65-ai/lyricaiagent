@@ -4,6 +4,7 @@ import { decomposeQuery } from "@/lib/query-decompose.server";
 import { formatSearchResultsForModel, searchTavily } from "@/lib/search.server";
 import { shouldSearchWeb } from "@/lib/search-trigger";
 import { checkQuota, consumeUsage, getUserIdFromRequest } from "@/lib/entitlements.server";
+import { buildPersonalityPrompt } from "@/lib/personality";
 
 
 type ChatMessage = { role: "user" | "assistant" | "system"; content: string };
@@ -36,13 +37,7 @@ function systemPrompt(
   failedParts: string[] = [],
 ) {
   const lines = [
-    'You are Lyric, a general-purpose AI assistant. Your tagline is "One AI. Everything you need."',
-    "You are conversational, intelligent, helpful and friendly.",
-    "You answer everyday, professional and educational questions equally well.",
-    "Explain concepts clearly, using structure and short examples where useful.",
-    "When a question is vague or a user is learning, ask one useful follow-up question.",
-    "Be concise by default; expand when the topic needs it.",
-    "Never invent facts. If unsure, say so.",
+    buildPersonalityPrompt(),
     "",
     `TODAY'S DATE: ${todayLabel()} (UTC). Treat any question about rankings, prices, office holders, news, sports or company facts as a question about TODAY unless the user names a past date. Your pretrained knowledge is out of date and must never be used for such questions.`,
   ];
