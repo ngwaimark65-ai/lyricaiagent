@@ -88,6 +88,11 @@ export const changePlan = createServerFn({ method: "POST" })
     return { plan: input.plan as PlanId };
   })
   .handler(async ({ data, context }): Promise<AccountState> => {
+    // Until a payment provider is connected, users may only move to Free.
+    // Paid upgrades require a verified payment (or the explicit test flag).
+    if (data.plan !== "free" && process.env["LYRIC_ALLOW_PLAN_TESTING"] !== "true") {
+      throw new Error("Paid plans will be available once checkout is live. You're on Free for now.");
+    }
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const now = new Date();
     const periodEnd =
