@@ -24,9 +24,19 @@ function ResetPasswordPage() {
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [busy, setBusy] = useState(false);
+  const [linkError, setLinkError] = useState("");
 
   useEffect(() => {
     const isRecovery = window.location.hash.includes("type=recovery");
+    const params = new URLSearchParams(window.location.hash.slice(1) || window.location.search);
+    const err = params.get("error_code") || params.get("error");
+    if (err) {
+      setLinkError(
+        /expired|otp/i.test(err + (params.get("error_description") ?? ""))
+          ? "This reset link has expired or was already used. Request a new one."
+          : "This reset link is invalid. Request a new one.",
+      );
+    }
     const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === "PASSWORD_RECOVERY" || (session && isRecovery)) setReady(true);
     });
@@ -42,7 +52,20 @@ function ResetPasswordPage() {
     setBusy(true);
     const { error } = await supabase.auth.updateUser({ password });
     setBusy(false);
-    if (error) { toast.error(error.message); return; }
+    if (error) {
+      toast.error(
+        /same|different/i.test(error.message)
+          ? "Choose a password different from your old one."
+          : /pwned|weak|leaked/i.test(error.message)
+            ? "That password has appeared in a data breach. Please choose another."
+            : /session|expired|jwt/i.test(error.message)
+              ? "Your reset link has expired. Please request a new one."
+              : /fetch|network/i.test(error.message)
+                ? "Network problem — check your connection and try again."
+                : error.message,
+      );
+      return;
+    }
     toast.success("Password updated");
     void navigate({ to: "/chat" });
   };
@@ -60,7 +83,7 @@ function ResetPasswordPage() {
         <h1 className="mb-2 text-2xl font-semibold">Set a new password</h1>
         {!ready ? (
           <p className="text-sm text-muted-foreground">
-            Open this page from the reset link in your email. Link expired?{" "}
+            {linkError || "Open this page from the reset link in your email. Link expired?"}{" "}
             <Link to="/auth" className="text-brand">
               Request a new one
             </Link>
