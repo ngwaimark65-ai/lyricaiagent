@@ -253,6 +253,7 @@ function friendlyAuthError(error: unknown): string {
   if (/pwned|weak|compromised|leaked/i.test(msg)) return "That password has appeared in a data breach. Please choose a different one.";
   if (/password/i.test(msg) && /characters|short/i.test(msg)) return "Password must be at least 8 characters.";
   if (/rate limit|too many/i.test(msg)) return "Too many attempts. Please wait a minute and try again.";
+  if (/HTTP 5\d\d|unavailable|timeout/i.test(msg)) return "Lyric's sign-in service is temporarily unavailable. Please try again in a minute.";
   if (/failed to fetch|network/i.test(msg)) return "Network problem — check your connection and try again.";
   if (/invalid.*email|email.*invalid/i.test(msg)) return "Please enter a valid email address.";
   return msg || "Something went wrong. Please try again.";
