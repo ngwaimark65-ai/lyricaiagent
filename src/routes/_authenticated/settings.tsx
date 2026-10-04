@@ -1,3 +1,5 @@
+import { useState } from "react";
+import { supabase } from "@/integrations/supabase/client";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { AppShell } from "@/components/lyric/app-shell";
@@ -214,5 +216,43 @@ function Field({
         className="w-full rounded-xl border border-hairline bg-background px-4 py-3 text-sm outline-none placeholder:text-muted-foreground/60 focus:border-brand/60"
       />
     </label>
+  );
+}
+
+function ChangePassword({ email }: { email: string }) {
+  const [current, setCurrent] = useState("");
+  const [next, setNext] = useState("");
+  const [busy, setBusy] = useState(false);
+  const save = async () => {
+    if (next.length < 8) return toast.error("New password must be at least 8 characters.");
+    setBusy(true);
+    // Verify the current password with the auth provider before changing it.
+    const { error: verifyError } = await supabase.auth.signInWithPassword({ email, password: current });
+    if (verifyError) {
+      setBusy(false);
+      return toast.error("Current password is incorrect. Signed in with Google? Use 'Forgot password' to set one.");
+    }
+    const { error } = await supabase.auth.updateUser({ password: next, current_password: current } as never);
+    setBusy(false);
+    if (error) return toast.error(error.message);
+    setCurrent("");
+    setNext("");
+    toast.success("Password changed");
+  };
+  const cls =
+    "w-full rounded-xl border border-hairline bg-background px-4 py-3 text-sm outline-none placeholder:text-muted-foreground/60 focus:border-brand/60";
+  return (
+    <div className="space-y-2">
+      <span className="block text-xs font-medium text-muted-foreground">Change password</span>
+      <input type="password" placeholder="Current password" value={current} onChange={(e) => setCurrent(e.target.value)} className={cls} />
+      <input type="password" placeholder="New password" value={next} onChange={(e) => setNext(e.target.value)} className={cls} />
+      <button
+        onClick={() => void save()}
+        disabled={busy || !current || !next}
+        className="w-full rounded-xl bg-surface-2 py-2.5 text-xs font-semibold disabled:opacity-50"
+      >
+        {busy ? "Saving…" : "Update password"}
+      </button>
+    </div>
   );
 }
