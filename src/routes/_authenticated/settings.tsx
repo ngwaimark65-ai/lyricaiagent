@@ -224,17 +224,17 @@ function ChangePassword({ email }: { email: string }) {
   const [next, setNext] = useState("");
   const [busy, setBusy] = useState(false);
   const save = async () => {
-    if (next.length < 8) return toast.error("New password must be at least 8 characters.");
+    if (next.length < 8) { toast.error("New password must be at least 8 characters."); return; }
     setBusy(true);
     // Verify the current password with the auth provider before changing it.
     const { error: verifyError } = await supabase.auth.signInWithPassword({ email, password: current });
     if (verifyError) {
       setBusy(false);
-      return toast.error("Current password is incorrect. Signed in with Google? Use 'Forgot password' to set one.");
+      { toast.error("Current password is incorrect. Signed in with Google? Use 'Forgot password' to set one."); return; }
     }
     const { error } = await supabase.auth.updateUser({ password: next, current_password: current } as never);
     setBusy(false);
-    if (error) return toast.error(error.message);
+    if (error) { toast.error(error.message); return; }
     setCurrent("");
     setNext("");
     toast.success("Password changed");
