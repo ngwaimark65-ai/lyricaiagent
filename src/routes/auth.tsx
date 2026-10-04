@@ -27,8 +27,8 @@ export const Route = createFileRoute("/auth")({
 const COPY: Record<Mode, { title: string; sub: string; cta: string }> = {
   login: {
     title: "Welcome back",
-    sub: "Sign in to pick up your conversations and study progress.",
-    cta: "Sign in",
+    sub: "Log in to pick up your conversations and study progress.",
+    cta: "Log in",
   },
   signup: {
     title: "Create your account",
@@ -44,9 +44,10 @@ const COPY: Record<Mode, { title: string; sub: string; cta: string }> = {
 
 function AuthPage() {
   const [mode, setMode] = useState<Mode>("login");
-  const [name, setName] = useState("");
+  const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const navigate = useNavigate();
   const copy = COPY[mode];
@@ -64,21 +65,35 @@ function AuthPage() {
 
   const submit = async () => {
     if (busy) return;
+    const cleanEmail = email.trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+      toast.error("Please enter a valid email address.");
+      return;
+    }
+    if (mode === "signup") {
+      if (password.length < 8) return void toast.error("Password must be at least 8 characters.");
+      if (password !== confirmPassword) return void toast.error("Passwords don't match.");
+    }
+    if (mode === "login" && !password) return void toast.error("Please enter your password.");
     setBusy(true);
     try {
       if (mode === "login") {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        const { error } = await supabase.auth.signInWithPassword({ email: cleanEmail, password });
         if (error) throw error;
       } else if (mode === "signup") {
         const { data, error } = await supabase.auth.signUp({
-          email,
+          email: cleanEmail,
           password,
           options: {
             emailRedirectTo: `${window.location.origin}/chat`,
-            data: { display_name: name },
+            data: { display_name: fullName.trim(), full_name: fullName.trim() },
           },
         });
         if (error) throw error;
+        // Existing confirmed email: the provider returns a user with no identities.
+        if (data.user && data.user.identities?.length === 0) {
+          throw new Error("An account with this email already exists. Log in or use Forgot password.");
+        }
         toast.success("Account created", {
           description: data.session
             ? "You're all set — taking you to your chat."
@@ -86,7 +101,7 @@ function AuthPage() {
         });
         if (!data.session) setMode("login");
       } else {
-        const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        const { error } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
           redirectTo: `${window.location.origin}/reset-password`,
         });
         if (error) throw error;
@@ -94,7 +109,7 @@ function AuthPage() {
         setMode("login");
       }
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Something went wrong. Try again.");
+      toast.error(friendlyAuthError(error));
     } finally {
       setBusy(false);
     }
@@ -105,7 +120,8 @@ function AuthPage() {
       redirect_uri: window.location.origin,
     });
     if (result.error) {
-      toast.error("Google sign-in failed. Please try again.");
+      const msg = String((result.error as { message?: string }).message ?? "");
+      toast.error(/cancel|closed/i.test(msg) ? "Google sign-in was cancelled." : "Google sign-in failed. Please try again.");
       return;
     }
     if (result.redirected) return;
@@ -131,7 +147,7 @@ function AuthPage() {
                   mode === m ? "bg-surface-2 text-foreground" : "text-muted-foreground",
                 )}
               >
-                {m === "login" ? "Login" : "Sign up"}
+                {m === "login" ? "Log in" : "Sign up"}
               </button>
             ))}
           </div>
@@ -141,36 +157,32 @@ function AuthPage() {
         <p className="mb-8 text-sm text-muted-foreground">{copy.sub}</p>
 
         <form
+          key={mode}
           className="space-y-4"
+          noValidate={false}
           onSubmit={(e) => {
             e.preventDefault();
             void submit();
           }}
         >
           {mode === "signup" && (
-            <Field
-              label="Full name"
-              type="text"
-              placeholder="Ada Lovelace"
-              value={name}
-              onChange={setName}
-            />
+            <Field id="signup-full-name" name="name" autoComplete="name" label="Full name" type="text" placeholder="Mark Ngwai" value={fullName} onChange={setFullName} />
           )}
-          <Field
-            label="Email"
-            type="email"
-            placeholder="you@example.com"
-            value={email}
-            onChange={setEmail}
-          />
+          <Field id={`${mode}-email`} name="email" autoComplete="email" label="Email" type="email" placeholder="you@example.com" value={email} onChange={setEmail} />
           {mode !== "forgot" && (
             <Field
+              id={`${mode}-password`}
+              name={mode === "signup" ? "new-password" : "password"}
+              autoComplete={mode === "signup" ? "new-password" : "current-password"}
               label="Password"
               type="password"
               placeholder="••••••••"
               value={password}
               onChange={setPassword}
             />
+          )}
+          {mode === "signup" && (
+            <Field id="signup-confirm-password" name="confirm-password" autoComplete="new-password" label="Confirm password" type="password" placeholder="••••••••" value={confirmPassword} onChange={setConfirmPassword} />
           )}
 
           <button
@@ -203,8 +215,18 @@ function AuthPage() {
 
         <div className="mt-8 space-y-2 text-center text-sm text-muted-foreground">
           {mode === "login" && (
-            <button onClick={() => setMode("forgot")} className="hover:text-foreground">
-              Forgot your password?
+            <>
+              <button onClick={() => setMode("forgot")} className="block w-full hover:text-foreground">
+                Forgot password?
+              </button>
+              <button onClick={() => setMode("signup")} className="block w-full hover:text-foreground">
+                New to Lyric? <span className="text-brand">Create an account</span>
+              </button>
+            </>
+          )}
+          {mode === "signup" && (
+            <button onClick={() => setMode("login")} className="block w-full hover:text-foreground">
+              Already have an account? <span className="text-brand">Log in</span>
             </button>
           )}
           {mode === "forgot" && (
@@ -223,13 +245,32 @@ function AuthPage() {
   );
 }
 
+function friendlyAuthError(error: unknown): string {
+  const msg = error instanceof Error ? error.message : String(error ?? "");
+  if (/invalid login credentials/i.test(msg)) return "Incorrect email or password.";
+  if (/email not confirmed/i.test(msg)) return "Please confirm your email first — check your inbox for the link.";
+  if (/already registered|already exists/i.test(msg)) return "An account with this email already exists. Log in or use Forgot password.";
+  if (/pwned|weak|compromised|leaked/i.test(msg)) return "That password has appeared in a data breach. Please choose a different one.";
+  if (/password/i.test(msg) && /characters|short/i.test(msg)) return "Password must be at least 8 characters.";
+  if (/rate limit|too many/i.test(msg)) return "Too many attempts. Please wait a minute and try again.";
+  if (/failed to fetch|network/i.test(msg)) return "Network problem — check your connection and try again.";
+  if (/invalid.*email|email.*invalid/i.test(msg)) return "Please enter a valid email address.";
+  return msg || "Something went wrong. Please try again.";
+}
+
 function Field({
+  id,
+  name,
+  autoComplete,
   label,
   type,
   placeholder,
   value,
   onChange,
 }: {
+  id: string;
+  name: string;
+  autoComplete: string;
   label: string;
   type: string;
   placeholder: string;
@@ -237,9 +278,12 @@ function Field({
   onChange: (value: string) => void;
 }) {
   return (
-    <label className="block">
+    <label htmlFor={id} className="block">
       <span className="mb-2 block text-xs font-medium text-muted-foreground">{label}</span>
       <input
+        id={id}
+        name={name}
+        autoComplete={autoComplete}
         type={type}
         placeholder={placeholder}
         value={value}
