@@ -176,14 +176,14 @@ export function ChatView({ conversationId }: { conversationId: string | null }) 
                       setRenamingId(c.id);
                       setRenameValue(c.title);
                     }}
-                    className="opacity-0 transition-opacity group-hover:opacity-100"
+                    className="opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100 md:focus-within:opacity-100"
                     aria-label="Rename conversation"
                   >
                     <Pencil className="size-3.5" />
                   </button>
                   <button
                     onClick={() => void removeConversation(c.id)}
-                    className="opacity-0 transition-opacity group-hover:opacity-100"
+                    className="opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100 md:focus-within:opacity-100"
                     aria-label="Delete conversation"
                   >
                     <Trash2 className="size-3.5" />
@@ -369,7 +369,7 @@ function MessageThread({
                   <div className="rounded-2xl rounded-tr-none bg-surface-2 px-4 py-3 text-sm">
                     {m.content}
                   </div>
-                  <div className="flex justify-end gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                  <div className="flex justify-end gap-1 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100 md:focus-within:opacity-100">
                     <CopyButton text={m.content} />
                     <MessageAction
                       label="Edit message"
@@ -400,7 +400,7 @@ function MessageThread({
                 {m.streaming && !m.content ? <TypingDots /> : <Markdown text={m.content} />}
               </div>
               {!m.streaming && (
-                <div className="flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                <div className="flex gap-1 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100 md:focus-within:opacity-100">
                   <CopyButton text={m.content} />
                   <MessageAction
                     label="Regenerate response"
@@ -454,7 +454,13 @@ function CopyButton({ text }: { text: string }) {
         });
       }}
     >
-      {copied ? <Check className="size-3.5 text-success" /> : <Copy className="size-3.5" />}
+      {copied ? (
+        <span className="flex items-center gap-1 text-xs text-success">
+          <Check className="size-3.5" /> Copied
+        </span>
+      ) : (
+        <Copy className="size-3.5" />
+      )}
     </MessageAction>
   );
 }
