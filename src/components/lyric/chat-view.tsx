@@ -454,7 +454,13 @@ function CopyButton({ text }: { text: string }) {
         });
       }}
     >
-      {copied ? <Check className="size-3.5 text-success" /> : <Copy className="size-3.5" />}
+      {copied ? (
+        <span className="flex items-center gap-1 text-xs text-success">
+          <Check className="size-3.5" /> Copied
+        </span>
+      ) : (
+        <Copy className="size-3.5" />
+      )}
     </MessageAction>
   );
 }
