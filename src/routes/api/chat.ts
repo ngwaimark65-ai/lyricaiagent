@@ -21,6 +21,7 @@ const VISION_PROMPT = [
   "- For maths and science problems, read the question back briefly, then explain step by step so the user learns the method, not just the answer.",
   "- For biology, chemistry and physics diagrams, identify the parts and explain what the diagram shows.",
   "- If the image is blurry, cropped, too dark or ambiguous, say what is unclear and ask a short clarifying question or for a clearer photo.",
+  "- Write maths in plain text (e.g. 3x + 4 = 19, x^2, 15/3), never LaTeX or $ signs — the chat cannot render LaTeX.",
   "- Follow-up questions may refer to an earlier image in the conversation; use it.",
 ].join("\n");
 
