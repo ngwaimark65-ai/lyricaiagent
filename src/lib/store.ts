@@ -412,6 +412,12 @@ export const actions = {
  * One question → one streamed answer. `persistUser` is false when the user
  * turn already exists (regenerate).
  */
+function imageUrls(attachments?: Attachment[]) {
+  return (attachments ?? [])
+    .filter((a) => a.kind === "image" && a.url.startsWith("data:image/"))
+    .map((a) => a.url);
+}
+
 async function runTurn(
   conversationId: string,
   content: string,
@@ -434,7 +440,7 @@ async function runTurn(
   const history = state.messages
     .filter((m) => m.conversationId === conversationId && !m.errored && m.content)
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
-    .map((m) => ({ role: m.role, content: m.content }));
+    .map((m) => ({ role: m.role, content: m.content, images: imageUrls(m.attachments) }));
 
   const localUserId = uid();
   const replyId = uid();
@@ -538,9 +544,8 @@ async function runTurn(
           ...history,
           {
             role: "user",
-            content: hasImage
-              ? `${content}\n\n(The user attached an image. Image understanding isn't connected yet — ask them to describe or type out what it shows.)`
-              : content,
+            content,
+            images: imageUrls(attachments),
           },
         ],
         preferences: state.profile.preferences,

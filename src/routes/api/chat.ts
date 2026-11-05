@@ -7,7 +7,53 @@ import { checkQuota, consumeUsage, getUserIdFromRequest } from "@/lib/entitlemen
 import { buildPersonalityPrompt } from "@/lib/personality";
 
 
-type ChatMessage = { role: "user" | "assistant" | "system"; content: string };
+type ChatMessage = { role: "user" | "assistant" | "system"; content: string; images?: string[] };
+
+const IMAGE_DATA_URL = /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/;
+const MAX_IMAGE_CHARS = 4_000_000; // ~3MB decoded
+const MAX_IMAGES_PER_MESSAGE = 4;
+const MAX_IMAGES_TOTAL = 6;
+
+const VISION_PROMPT = [
+  "",
+  "IMAGES: Some user messages include images (photos, screenshots, diagrams, charts, handwritten or printed questions, worksheets). Look at them carefully.",
+  "- Describe only what you can actually see; never invent text or numbers that are not legible.",
+  "- For maths and science problems, read the question back briefly, then explain step by step so the user learns the method, not just the answer.",
+  "- For biology, chemistry and physics diagrams, identify the parts and explain what the diagram shows.",
+  "- If the image is blurry, cropped, too dark or ambiguous, say what is unclear and ask a short clarifying question or for a clearer photo.",
+  "- Write maths in plain text (e.g. 3x + 4 = 19, x^2, 15/3), never LaTeX or $ signs — the chat cannot render LaTeX.",
+  "- Follow-up questions may refer to an earlier image in the conversation; use it.",
+].join("\n");
+
+/** Validates images server-side and converts to the model's multimodal format. Image bytes are never logged. */
+function toModelMessages(messages: ChatMessage[]) {
+  let budget = MAX_IMAGES_TOTAL;
+  const out = [];
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i]!;
+    const text = typeof m.content === "string" ? m.content : "";
+    const images =
+      m.role === "user" && Array.isArray(m.images)
+        ? m.images
+            .filter((u) => typeof u === "string" && u.length <= MAX_IMAGE_CHARS && IMAGE_DATA_URL.test(u))
+            .slice(0, MAX_IMAGES_PER_MESSAGE)
+        : [];
+    const kept = images.slice(0, Math.max(0, budget));
+    budget -= kept.length;
+    out.unshift(
+      kept.length > 0
+        ? {
+            role: m.role,
+            content: [
+              { type: "text", text: text || "Please look at this image." },
+              ...kept.map((url) => ({ type: "image_url", image_url: { url } })),
+            ],
+          }
+        : { role: m.role, content: text },
+    );
+  }
+  return out;
+}
 
 type Body = {
   messages?: ChatMessage[];
@@ -93,6 +139,22 @@ export const Route = createFileRoute("/api/chat")({
         if (messages.length === 0) {
           return new Response("Messages are required", { status: 400 });
         }
+        const latestImages = messages[messages.length - 1]?.images;
+        if (Array.isArray(latestImages) && latestImages.length > 0) {
+          if (latestImages.length > MAX_IMAGES_PER_MESSAGE) {
+            return new Response(`Please send at most ${MAX_IMAGES_PER_MESSAGE} images at a time.`, { status: 400 });
+          }
+          const bad = latestImages.some(
+            (u) => typeof u !== "string" || u.length > MAX_IMAGE_CHARS || !IMAGE_DATA_URL.test(u),
+          );
+          if (bad) {
+            return new Response(
+              "That image couldn't be read. Please use a JPG, PNG or WEBP image under 10 MB.",
+              { status: 400 },
+            );
+          }
+        }
+        const hasImages = messages.some((m) => Array.isArray(m.images) && m.images.length > 0);
 
         const apiKey = process.env["LOVABLE_API_KEY"];
         if (!apiKey) {
@@ -209,10 +271,11 @@ export const Route = createFileRoute("/api/chat")({
                   searchBlocked
                     ? "\nThe user has used their whole daily live web search allowance, so no current results are available for this question. Answer from your own knowledge, and open by telling them plainly that their daily web search allowance is used up, that the answer may be out of date, and that upgrading their Lyric plan raises the allowance."
                     : "",
+                  hasImages ? VISION_PROMPT : "",
                 ].join(""),
               },
               // Conversation memory length is a plan entitlement.
-              ...messages.slice(-Math.max(2, quota.entitlements.contextMessages)),
+              ...toModelMessages(messages.slice(-Math.max(2, quota.entitlements.contextMessages))),
             ],
 
           }),
