@@ -26,6 +26,25 @@ import { useAuth } from "@/hooks/use-auth";
 import type { Attachment, Message } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
+const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+
+/** Downscales to at most 1600px and re-encodes as JPEG so images stay small enough to save and send. */
+async function compressImage(file: File): Promise<string> {
+  const bitmap = await createImageBitmap(file);
+  const scale = Math.min(1, 1600 / Math.max(bitmap.width, bitmap.height));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(bitmap.width * scale);
+  canvas.height = Math.round(bitmap.height * scale);
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("no canvas");
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  bitmap.close();
+  return canvas.toDataURL("image/jpeg", 0.85);
+}
+
 const STARTERS = [
   "What is photosynthesis?",
   "Help me write an email to my landlord",
@@ -555,16 +574,38 @@ function Composer({
     textareaRef.current?.focus();
   };
 
-  const addFiles = (files: FileList | null, kind: Attachment["kind"]) => {
+  const addFiles = async (files: FileList | null, kind: Attachment["kind"]) => {
     if (!files) return;
-    const next = Array.from(files).map((file) => ({
-      id: Math.random().toString(36).slice(2),
-      kind,
-      name: file.name,
-      url: URL.createObjectURL(file),
-      size: file.size,
-    }));
-    setAttachments((prev) => [...prev, ...next]);
+    if (kind === "file") {
+      toast("Only images are supported right now", {
+        description: "Use the image button to add a JPG, PNG or WEBP.",
+      });
+      return;
+    }
+    for (const file of Array.from(files)) {
+      if (attachments.length >= 4) {
+        toast.error("You can attach up to 4 images per message.");
+        break;
+      }
+      if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+        toast.error(`${file.name} isn't supported`, { description: "Use a JPG, PNG or WEBP image." });
+        continue;
+      }
+      if (file.size > MAX_IMAGE_BYTES) {
+        toast.error(`${file.name} is too large`, { description: "Images must be under 10 MB." });
+        continue;
+      }
+      try {
+        const url = await compressImage(file);
+        setAttachments((prev) =>
+          prev.length >= 4
+            ? prev
+            : [...prev, { id: Math.random().toString(36).slice(2), kind: "image", name: file.name, url, size: file.size }],
+        );
+      } catch {
+        toast.error(`${file.name} couldn't be read`, { description: "The image may be damaged. Try another one." });
+      }
+    }
   };
 
   return (
@@ -575,14 +616,16 @@ function Composer({
         {attachments.length > 0 && (
           <div className="mb-2 flex flex-wrap gap-2">
             {attachments.map((a) => (
-              <span
-                key={a.id}
-                className="flex items-center gap-2 rounded-lg border border-hairline bg-surface px-3 py-1.5 text-xs text-muted-foreground"
-              >
-                {a.name}
+              <span key={a.id} className="relative">
+                <img
+                  src={a.url}
+                  alt={a.name}
+                  className="size-16 rounded-lg border border-hairline object-cover"
+                />
                 <button
                   onClick={() => setAttachments((p) => p.filter((x) => x.id !== a.id))}
-                  aria-label="Remove attachment"
+                  aria-label="Remove image"
+                  className="absolute -right-1.5 -top-1.5 grid size-5 place-items-center rounded-full border border-hairline bg-background text-foreground"
                 >
                   <X className="size-3" />
                 </button>
@@ -649,9 +692,13 @@ function Composer({
         <input
           ref={imageRef}
           type="file"
-          accept="image/*"
+          accept="image/jpeg,image/png,image/webp"
+          multiple
           className="hidden"
-          onChange={(e) => addFiles(e.target.files, "image")}
+          onChange={(e) => {
+            void addFiles(e.target.files, "image");
+            e.target.value = "";
+          }}
         />
       </div>
     </div>
