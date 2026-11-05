@@ -29,7 +29,7 @@ function toModelMessages(messages: ChatMessage[]) {
   let budget = MAX_IMAGES_TOTAL;
   const out = [];
   for (let i = messages.length - 1; i >= 0; i--) {
-    const m = messages[i];
+    const m = messages[i]!;
     const text = typeof m.content === "string" ? m.content : "";
     const images =
       m.role === "user" && Array.isArray(m.images)
