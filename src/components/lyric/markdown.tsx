@@ -11,6 +11,29 @@ function urlLabel(href: string) {
   }
 }
 
+const SUP: Record<string, string> = { "0": "⁰", "1": "¹", "2": "²", "3": "³", "4": "⁴", "5": "⁵", "6": "⁶", "7": "⁷", "8": "⁸", "9": "⁹", n: "ⁿ", "-": "⁻" };
+const SYMBOLS: Record<string, string> = { times: "×", div: "÷", pm: "±", le: "≤", leq: "≤", ge: "≥", geq: "≥", neq: "≠", ne: "≠", pi: "π", theta: "θ", alpha: "α", beta: "β", cdot: "·", approx: "≈", infty: "∞", rightarrow: "→", to: "→", degree: "°", circ: "°" };
+
+/** Turns stray LaTeX maths into readable Unicode so equations never show as code. */
+function prettifyMath(text: string) {
+  const conv = (s: string) =>
+    s
+      .replace(/\\frac\{([^{}]*)\}\{([^{}]*)\}/g, "($1)/($2)")
+      .replace(/\\sqrt\{([^{}]*)\}/g, "√($1)")
+      .replace(/\\(?:text|mathrm)\{([^{}]*)\}/g, "$1")
+      .replace(/\\([a-zA-Z]+)/g, (m, n: string) => SYMBOLS[n] ?? m)
+      .replace(/\^\{?([0-9n-]{1,3})\}?/g, (m, d: string) =>
+        [...d].every((c) => SUP[c]) ? [...d].map((c) => SUP[c]).join("") : m,
+      )
+      .replace(/\\[,;!]/g, " ")
+      .replace(/[{}]/g, "");
+  return text
+    .replace(/\$\$([\s\S]+?)\$\$/g, (_, m: string) => conv(m))
+    .replace(/\\\[([\s\S]+?)\\\]/g, (_, m: string) => conv(m))
+    .replace(/\\\(([\s\S]+?)\\\)/g, (_, m: string) => conv(m))
+    .replace(/\$([^$\n]*[\\^=][^$\n]*)\$/g, (_, m: string) => conv(m));
+}
+
 /**
  * Renders assistant Markdown safely.
  * react-markdown does not render raw HTML unless rehype-raw is added, so
@@ -100,7 +123,7 @@ export function Markdown({ text, className }: { text: string; className?: string
           hr: () => <hr className="border-hairline" />,
         }}
       >
-        {text}
+        {prettifyMath(text)}
       </ReactMarkdown>
     </div>
   );
