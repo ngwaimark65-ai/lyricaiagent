@@ -29,8 +29,64 @@ import { cn } from "@/lib/utils";
 const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 
-/** Downscales to at most 1600px and re-encodes as JPEG so images stay small enough to save and send. */
-function readAsDataUrl(file: File): Promise<string> {
+/** A user-facing upload error with a specific explanation. */
+class UploadError extends Error {
+  constructor(public title: string, public detail: string) {
+    super(title);
+  }
+}
+
+type ImageMime = "image/jpeg" | "image/png" | "image/webp";
+
+/** Detects the real format from the file's first bytes (Android often reports a blank or wrong MIME type). */
+function sniffImageType(bytes: Uint8Array): ImageMime | "image/heic" | "image/gif" | null {
+  const b = bytes;
+  if (b.length < 12) return null;
+  if (b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return "image/jpeg";
+  if (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) return "image/png";
+  const ascii = (s: number, e: number) => String.fromCharCode(...b.slice(s, e));
+  if (ascii(0, 4) === "RIFF" && ascii(8, 12) === "WEBP") return "image/webp";
+  if (ascii(0, 3) === "GIF") return "image/gif";
+  if (ascii(4, 8) === "ftyp" && /hei|hev|mif|avif/.test(ascii(8, 12))) return "image/heic";
+  return null;
+}
+
+/**
+ * Reads the bytes immediately (before the picker input is reset), checks the real
+ * format, then returns a correctly-typed Blob ready for decoding/compression.
+ */
+async function readImageFile(file: File): Promise<Blob> {
+  if (file.size === 0) {
+    throw new UploadError(
+      `${file.name} is empty`,
+      "Your phone gave Lyric an empty file. If the photo is in Google Photos or the cloud, download it to your device first.",
+    );
+  }
+  let buffer: ArrayBuffer;
+  try {
+    buffer = await file.arrayBuffer();
+  } catch (error) {
+    console.warn("[upload] could not read file bytes:", (error as Error)?.name);
+    throw new UploadError(
+      `Lyric couldn't access ${file.name}`,
+      "Your phone blocked access to this photo. Try choosing it from Files or Gallery, or save a copy to your device first.",
+    );
+  }
+  const type = sniffImageType(new Uint8Array(buffer, 0, Math.min(32, buffer.byteLength)));
+  if (type === "image/heic") {
+    throw new UploadError(`${file.name} is a HEIC photo`, "Your browser can't open HEIC. Change your camera format to JPG, or take a screenshot of it and upload that.");
+  }
+  if (type === "image/gif") {
+    throw new UploadError(`${file.name} is a GIF`, "Use a JPG, PNG or WEBP image.");
+  }
+  if (!type) {
+    throw new UploadError(`${file.name} isn't a supported image`, "Its contents aren't JPG, PNG or WEBP. Try a different photo.");
+  }
+  return new Blob([buffer], { type });
+}
+
+/** Downscales to at most 1280px and re-encodes as JPEG so images stay small enough to save and send. */
+function readAsDataUrl(file: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result));
@@ -49,7 +105,7 @@ function loadImage(src: string): Promise<HTMLImageElement> {
 }
 
 // Uses a plain <img> decode (works in phone browsers where createImageBitmap fails on large camera photos).
-async function decodeAny(file: File, objectUrl: string): Promise<CanvasImageSource & { width: number; height: number }> {
+async function decodeAny(file: Blob, objectUrl: string): Promise<CanvasImageSource & { width: number; height: number }> {
   // Try several decoders: phone webviews often fail one of them on camera photos.
   try {
     const img = await loadImage(objectUrl);
@@ -65,7 +121,7 @@ async function decodeAny(file: File, objectUrl: string): Promise<CanvasImageSour
   return img;
 }
 
-async function compressImage(file: File): Promise<string> {
+async function compressImage(file: Blob): Promise<string> {
   const objectUrl = URL.createObjectURL(file);
   try {
     const img = await decodeAny(file, objectUrl);
@@ -86,9 +142,13 @@ async function compressImage(file: File): Promise<string> {
     if (!out.startsWith("data:image/jpeg")) throw new Error("encode failed");
     return out;
   } catch (error) {
-    // Last resort: send the original file if it's small enough.
+    console.warn("[upload] decode/compress failed:", (error as Error)?.message);
+    // Last resort: send the original (already type-checked) file if it's small enough.
     if (file.size <= 2.9 * 1024 * 1024) return readAsDataUrl(file);
-    throw error;
+    throw new UploadError(
+      "This photo is too large for your browser to process",
+      "Try a smaller photo or a screenshot of it.",
+    );
   } finally {
     URL.revokeObjectURL(objectUrl);
   }
@@ -623,8 +683,8 @@ function Composer({
     textareaRef.current?.focus();
   };
 
-  const addFiles = async (files: FileList | null, kind: Attachment["kind"]) => {
-    if (!files) return;
+  const addFiles = async (files: File[] | FileList | null, kind: Attachment["kind"]) => {
+    if (!files || files.length === 0) return;
     if (kind === "file") {
       toast("Only images are supported right now", {
         description: "Use the image button to add a JPG, PNG or WEBP.",
@@ -636,7 +696,13 @@ function Composer({
         toast.error("You can attach up to 4 images per message.");
         break;
       }
-      if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+      // Android pickers often report a blank type; the real format is checked from the bytes below.
+      const looksLikeImage =
+        ALLOWED_IMAGE_TYPES.includes(file.type) ||
+        file.type === "" ||
+        file.type === "application/octet-stream" ||
+        /\.(jpe?g|png|webp)$/i.test(file.name);
+      if (!looksLikeImage) {
         toast.error(`${file.name} isn't supported`, { description: "Use a JPG, PNG or WEBP image." });
         continue;
       }
@@ -645,14 +711,20 @@ function Composer({
         continue;
       }
       try {
-        const url = await compressImage(file);
+        const blob = await readImageFile(file);
+        const url = await compressImage(blob);
         setAttachments((prev) =>
           prev.length >= 4
             ? prev
             : [...prev, { id: Math.random().toString(36).slice(2), kind: "image", name: file.name, url, size: file.size }],
         );
-      } catch {
-        toast.error(`${file.name} couldn't be read`, { description: "The image may be damaged. Try another one." });
+      } catch (error) {
+        if (error instanceof UploadError) {
+          toast.error(error.title, { description: error.detail });
+        } else {
+          console.warn("[upload] unexpected error:", (error as Error)?.name, (error as Error)?.message);
+          toast.error(`${file.name} couldn't be added`, { description: "Something went wrong preparing this image. Try again." });
+        }
       }
     }
   };
@@ -745,8 +817,13 @@ function Composer({
           multiple
           className="hidden"
           onChange={(e) => {
-            void addFiles(e.target.files, "image");
-            e.target.value = "";
+            // Snapshot the files and only reset the input after they've been read —
+            // resetting first can revoke access to the photo on Android.
+            const input = e.currentTarget;
+            const picked = Array.from(input.files ?? []);
+            void addFiles(picked, "image").finally(() => {
+              input.value = "";
+            });
           }}
         />
       </div>
