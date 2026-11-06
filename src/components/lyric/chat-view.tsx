@@ -49,14 +49,31 @@ function loadImage(src: string): Promise<HTMLImageElement> {
 }
 
 // Uses a plain <img> decode (works in phone browsers where createImageBitmap fails on large camera photos).
+async function decodeAny(file: File, objectUrl: string): Promise<CanvasImageSource & { width: number; height: number }> {
+  // Try several decoders: phone webviews often fail one of them on camera photos.
+  try {
+    const img = await loadImage(objectUrl);
+    if (img.naturalWidth && img.naturalHeight) return img;
+  } catch { /* next */ }
+  if (typeof createImageBitmap === "function") {
+    try {
+      return await createImageBitmap(file);
+    } catch { /* next */ }
+  }
+  const img = await loadImage(await readAsDataUrl(file));
+  if (!img.naturalWidth) throw new Error("empty image");
+  return img;
+}
+
 async function compressImage(file: File): Promise<string> {
   const objectUrl = URL.createObjectURL(file);
   try {
-    const img = await loadImage(objectUrl);
-    const w = img.naturalWidth;
-    const h = img.naturalHeight;
+    const img = await decodeAny(file, objectUrl);
+    const w = img instanceof HTMLImageElement ? img.naturalWidth : img.width;
+    const h = img instanceof HTMLImageElement ? img.naturalHeight : img.height;
     if (!w || !h) throw new Error("empty image");
-    const scale = Math.min(1, 1600 / Math.max(w, h));
+    // 1280px keeps canvas memory low on phones while staying legible for handwriting.
+    const scale = Math.min(1, 1280 / Math.max(w, h));
     const canvas = document.createElement("canvas");
     canvas.width = Math.max(1, Math.round(w * scale));
     canvas.height = Math.max(1, Math.round(h * scale));
@@ -70,7 +87,7 @@ async function compressImage(file: File): Promise<string> {
     return out;
   } catch (error) {
     // Last resort: send the original file if it's small enough.
-    if (file.size <= 2.5 * 1024 * 1024) return readAsDataUrl(file);
+    if (file.size <= 2.9 * 1024 * 1024) return readAsDataUrl(file);
     throw error;
   } finally {
     URL.revokeObjectURL(objectUrl);
